@@ -1,0 +1,16 @@
+Uses the pairing library written by ZCash project:
+https://electriccoin.co/blog/pairing-cryptography-in-rust/
+
+Originally pairing library, now renamed to bls12_381
+
+TODO:
+* Cleanup code
+* Properly find terms for each term
+* Organize tuples into data structures and type aliases
+* Move shared state and config into a coconut struct
+* Finish proofs
+* Create ProofBuilder class which is extendable with custom phi value from paper
+* Document API and make unit tests
+* Support for other curves
+* Optimizations
+
