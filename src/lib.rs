@@ -10,6 +10,16 @@ use sha2::{Sha256, Sha512, Digest};
 use hex_slice::AsHex;
 use std::iter::Sum;
 
+// Use this for handling Sha2 generic arrays and from_bytes/compressed for scalar/GX functions
+fn clone_into_array<A, T>(slice: &[T]) -> A
+    where A: Sized + Default + AsMut<[T]>,
+          T: Clone
+{
+    let mut a = Default::default();
+    <A as AsMut<[T]>>::as_mut(&mut a).clone_from_slice(slice);
+    a
+}
+
 pub trait MyRandom {
     fn new_random<T: RngCore>(rng: &mut T) -> Self;
 }
@@ -275,12 +285,156 @@ fn elgamal_encrypt(params: &mut Parameters, gamma: &bls::G1Projective,
 }
 
 type AttributeList = Vec<bls::Scalar>;
-type LambdaType = (bls::G1Projective, Vec<EncryptedValue>);
+type LambdaType = (bls::G1Projective, Vec<EncryptedValue>, SignerProof);
 
 pub fn compute_commit_hash(attribute_commit: &bls::G1Projective) -> bls::G1Projective {
     let commit_data = bls::G1Affine::from(attribute_commit).to_compressed();
     let commit_hash = bls::G1Projective::hash_to_point(&commit_data);
     commit_hash
+}
+
+fn compute_challenge(points_g1: Vec<&bls::G1Projective>, points_g2: Vec<&bls::G2Projective>)
+    -> bls::Scalar {
+    for i in 0u32.. {
+        let mut hasher = Sha256::new();
+
+        let i_data = i.to_le_bytes();
+        hasher.input(&i_data);
+
+        for point in &points_g1 {
+            let data = bls::G1Affine::from(*point).to_compressed();
+            hasher.input(&data[0..32]);
+            hasher.input(&data[32..]);
+        }
+        for point in &points_g2 {
+            let data = bls::G2Affine::from(*point).to_compressed();
+            hasher.input(&data[0..32]);
+            hasher.input(&data[32..64]);
+            hasher.input(&data[64..]);
+        }
+        let hash_result = hasher.result();
+
+        // TODO: how can I fix this? Why not &hash_result[0...32]??
+        let mut hash_data = [0u8; 32];
+        hash_data.copy_from_slice(hash_result.as_slice());
+
+        let challenge = bls::Scalar::from_bytes(&hash_data);
+        if challenge.is_some().unwrap_u8() == 1 {
+            return challenge.unwrap();
+        }
+    }
+    unreachable!();
+}
+
+type SignerProof = (bls::Scalar, bls::Scalar, Vec<bls::Scalar>, Vec<bls::Scalar>);
+
+fn make_signer_proof(params: &mut Parameters, gamma: &bls::G1Projective,
+                     ciphertext: &Vec<EncryptedValue>, attribute_commit: &bls::G1Projective,
+                     commit_hash: &bls::G1Projective, attribute_keys: &Vec<bls::Scalar>,
+                     attributes: &AttributeList, blinding_factor: &bls::Scalar)
+-> SignerProof {
+    assert_eq!(ciphertext.len(), attribute_keys.len());
+    assert_eq!(ciphertext.len(), attributes.len());
+
+    // Random witness
+    let witness_blind = params.random_scalar();
+    let witness_keys: Vec<_> = attribute_keys.iter().map(|_| params.random_scalar()).collect();
+    let witness_attributes: Vec<_> = attributes.iter().map(|_| params.random_scalar()).collect();
+
+    // Witness commit
+    let witness_commit_a: Vec<_> =
+        witness_keys.iter().map(|witness| params.g1 * witness).collect();
+    let witness_commit_b: Vec<_> =
+        witness_keys.iter().zip(witness_attributes.iter())
+            .map(|(witness_key, witness_attribute)|
+                 gamma * witness_key + commit_hash * witness_attribute).collect();
+    assert_eq!(witness_attributes.len(), params.hs.len());
+    let witness_commit_attributes =
+        params.g1 * witness_blind + ecc_sum(
+            &params.hs.iter().zip(witness_attributes.iter())
+                .map(|(h, witness)| h * witness).collect());
+
+
+    // Challenge
+    let g1 = bls::G1Projective::from(params.g1);
+    let hs: Vec<_> = params.hs.iter().map(|h| bls::G1Projective::from(h)).collect();
+    let challenge = compute_challenge(
+        {
+            let mut points: Vec<&_> = vec![
+                &g1,                                    // G1
+                attribute_commit,                       // C_m
+                commit_hash,                            // h
+                &witness_commit_attributes              // Cw
+            ];
+            points.extend(witness_commit_a.iter()); // Aw
+            points.extend(witness_commit_b.iter()); // Bw
+            points.extend(hs.iter());               // hs
+            points
+        },
+        vec![&bls::G2Projective::from(params.g2)]       // G2
+    );
+
+    // Responses
+    assert_eq!(witness_keys.len(), attribute_keys.len());
+    assert_eq!(witness_attributes.len(), attributes.len());
+    let response_blind = witness_blind - challenge * blinding_factor;
+    let response_keys: Vec<_> =
+        witness_keys.iter().zip(attribute_keys.iter())
+            .map(|(witness, key)| witness - challenge * key)
+            .collect();
+    let response_attributes: Vec<_> =
+        witness_attributes.iter().zip(attributes.iter())
+            .map(|(witness, attribute)| witness - challenge * attribute)
+            .collect();
+
+    (challenge, response_blind, response_keys, response_attributes)
+}
+
+fn verify_signer_proof(params: &Parameters, gamma: &bls::G1Projective,
+                       ciphertext: &Vec<EncryptedValue>,
+                       attribute_commit: &bls::G1Projective, commit_hash: &bls::G1Projective,
+                       proof: &SignerProof) -> bool {
+    let (a_factors, b_factors): (Vec<&_>, Vec<&_>) =
+        ciphertext.iter().map(|&(ref a, ref b)| (a, b)).unzip();
+    let (challenge, response_blind, response_keys, response_attributes) = proof;
+
+    // Recompute witness commitments
+    assert_eq!(ciphertext.len(), response_keys.len());
+    assert_eq!(a_factors.len(), response_keys.len());
+    assert_eq!(b_factors.len(), response_keys.len());
+    let witness_commit_a: Vec<_> =
+        a_factors.iter().zip(response_keys.iter())
+            .map(|(a_i, response)| *a_i * challenge + params.g1 * response).collect();
+    let witness_commit_b: Vec<_> =
+        b_factors.iter().zip(response_keys.iter()).zip(response_attributes.iter())
+            .map(|((b_i, response_key), response_attribute)|
+                 *b_i * challenge + gamma * response_key + commit_hash * response_attribute)
+            .collect();
+    let witness_commit_attributes =
+        attribute_commit * challenge + params.g1 * response_blind + ecc_sum(
+            &params.hs.iter().zip(response_attributes.iter())
+                .map(|(h_i, response)| h_i * response).collect());
+
+    // Challenge
+    let g1 = bls::G1Projective::from(params.g1);
+    let hs: Vec<_> = params.hs.iter().map(|h| bls::G1Projective::from(h)).collect();
+    let recomputed_challenge = compute_challenge(
+        {
+            let mut points: Vec<&_> = vec![
+                &g1,                                    // G1
+                attribute_commit,                       // C_m
+                commit_hash,                            // h
+                &witness_commit_attributes              // Cw
+            ];
+            points.extend(witness_commit_a.iter()); // Aw
+            points.extend(witness_commit_b.iter()); // Bw
+            points.extend(hs.iter());               // hs
+            points
+        },
+        vec![&bls::G2Projective::from(params.g2)]       // G2
+    );
+
+    *challenge == recomputed_challenge
 }
 
 pub fn prepare_blind_sign(params: &mut Parameters, gamma: &bls::G1Projective,
@@ -305,25 +459,33 @@ pub fn prepare_blind_sign(params: &mut Parameters, gamma: &bls::G1Projective,
                 elgamal_encrypt(params, gamma, &attribute, &commit_hash, &key))
             .collect();
 
-    (attribute_commit, encrypted_attributes)
+    let signer_proof = make_signer_proof(params, gamma, &encrypted_attributes, &attribute_commit,
+                                         &commit_hash, &attribute_keys, &attributes,
+                                         &blinding_factor);
+
+    (attribute_commit, encrypted_attributes, signer_proof)
 }
 
 type PartialSignature = (bls::G1Projective, bls::G1Projective);
 
 pub fn blind_sign(params: &Parameters, secret_key: &SecretKey,
-              gamma: bls::G1Projective, lambda: &LambdaType)
-    -> PartialSignature {
+                  gamma: &bls::G1Projective, lambda: &LambdaType)
+    -> Result<PartialSignature, &'static str> {
     let (x, y) = secret_key;
-    let (attribute_commit, encrypted_attributes) = lambda;
+    let (attribute_commit, encrypted_attributes, signer_proof) = lambda;
 
     assert_eq!(encrypted_attributes.len(), params.hs.len());
     let (a_factors, b_factors): (Vec<&_>, Vec<&_>) =
         encrypted_attributes.iter().map(|&(ref a, ref b)| (a, b)).unzip();
 
-    // Verify proof here
-
     // Issue signature
     let commit_hash = compute_commit_hash(attribute_commit);
+
+    // Verify proof here
+    if !verify_signer_proof(params, &gamma, encrypted_attributes,
+                            attribute_commit, &commit_hash, signer_proof) {
+        return Err("verify proof failed")
+    }
 
     // TODO: Add public attributes - need to see about selective reveal
     let signature_a = ecc_sum(
@@ -339,7 +501,7 @@ pub fn blind_sign(params: &Parameters, secret_key: &SecretKey,
                 .collect()
         );
 
-    (signature_a, signature_b)
+    Ok((signature_a, signature_b))
 }
 
 fn elgamal_decrypt(private_key: &bls::Scalar, encrypted_value: &EncryptedValue)
@@ -441,7 +603,7 @@ fn it_works() {
 
     let blind_signatures: Vec<_> =
         secret_keys.iter()
-            .map(|secret_key| blind_sign(&parameters, secret_key, gamma, &lambda))
+            .map(|secret_key| blind_sign(&parameters, secret_key, &gamma, &lambda).unwrap())
             .collect();
 
     // Signatures should be a struct, with an authority ID inside them
