@@ -233,6 +233,7 @@ pub fn aggregate_keys(params: &Parameters, verify_keys: &Vec<VerifyKey>)
     -> (bls::G2Projective, PointList) {
     let lagrange = lagrange_basis(verify_keys.len() as u64);
 
+    // TODO: make sense of this
     let (alpha, beta): (Vec<&bls::G2Projective>, Vec<&PointList>) =
         verify_keys.iter().map(|&(ref a, ref b)| (a, b)).unzip();
 
