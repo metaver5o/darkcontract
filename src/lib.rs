@@ -502,7 +502,7 @@ fn verify_verify_proof(params: &Parameters, verify_key: &(bls::G2Projective, Poi
         + ecc_sum(
             &beta.iter().zip(response_kappa.iter())
                 .map(|(beta_i, response)| beta_i * response).collect());
-    let witness_commit_blind = v * challenge + blind_commit_hash * challenge;
+    let witness_commit_blind = v * challenge + blind_commit_hash * response_blind;
 
     // Challenge
     let g1 = bls::G1Projective::from(params.g1);
