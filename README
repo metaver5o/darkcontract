@@ -6,6 +6,8 @@ Originally pairing library, now renamed to bls12_381
 TODO:
 * Cleanup code
 * Organize tuples into data structures and type aliases
+* Abstract common operations (witness - challenge * response),
+  computing challenges, ...
 * Finish sum trait for G1/G2... create new trait for shared stuff make pullreq
 * Organize into new API with structs
 * Add public attributes
