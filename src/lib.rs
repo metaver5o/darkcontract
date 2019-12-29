@@ -27,7 +27,7 @@ impl MyRandom for bls::Scalar {
     }
 }
 
-struct Parameters<'a> {
+pub struct Parameters<'a> {
     g1: bls::G1Affine,
     hs: Vec<bls::G1Affine>,
     g2: bls::G2Affine,
@@ -35,7 +35,7 @@ struct Parameters<'a> {
 }
 
 impl<'a> Parameters<'a> {
-    fn new<T: RngCore>(attributes_size: usize, rng: &'a mut T) -> Self {
+    pub fn new<T: RngCore>(attributes_size: usize, rng: &'a mut T) -> Self {
         let g1 = bls::G1Affine::generator();
         let g2 = bls::G2Affine::generator();
 
@@ -126,7 +126,7 @@ type PointList = Vec<bls::G2Projective>;
 type VerifyKey = (bls::G2Projective, PointList);
 type SecretKey = (bls::Scalar, ScalarList);
 
-fn ttp_keygen(params: &mut Parameters, threshold: usize, number_authorities: usize) 
+pub fn ttp_keygen(params: &mut Parameters, threshold: usize, number_authorities: usize) 
     -> (Vec<SecretKey>, Vec<VerifyKey>) {
     let attributes_size = params.hs.len();
     assert!(number_authorities >= threshold && threshold > 0);
@@ -219,7 +219,7 @@ fn ec_sum(points: &Vec<bls::G2Projective>) -> bls::G2Projective {
         .fold(bls::G2Projective::identity(), |result, x| result + *x)
 }
 
-fn aggregate_keys(params: &Parameters, verify_keys: &Vec<VerifyKey>)
+pub fn aggregate_keys(params: &Parameters, verify_keys: &Vec<VerifyKey>)
     -> (bls::G2Projective, PointList) {
     let lagrange = lagrange_basis(verify_keys.len() as u64);
 
@@ -260,7 +260,7 @@ fn test_ttp_keygen() {
     assert_eq!(ppair_1, ppair_2);
 }
 
-fn elgamal_keygen(params: &mut Parameters) -> (bls::Scalar, bls::G1Projective) {
+pub fn elgamal_keygen(params: &mut Parameters) -> (bls::Scalar, bls::G1Projective) {
     let d = params.random_scalar();
     (d, params.g1 * d)
 }
@@ -277,13 +277,13 @@ fn elgamal_encrypt(params: &mut Parameters, gamma: &bls::G1Projective,
 type AttributeList = Vec<bls::Scalar>;
 type LambdaType = (bls::G1Projective, Vec<EncryptedValue>);
 
-fn compute_commit_hash(attribute_commit: &bls::G1Projective) -> bls::G1Projective {
+pub fn compute_commit_hash(attribute_commit: &bls::G1Projective) -> bls::G1Projective {
     let commit_data = bls::G1Affine::from(attribute_commit).to_compressed();
     let commit_hash = bls::G1Projective::hash_to_point(&commit_data);
     commit_hash
 }
 
-fn prepare_blind_sign(params: &mut Parameters, gamma: &bls::G1Projective,
+pub fn prepare_blind_sign(params: &mut Parameters, gamma: &bls::G1Projective,
                       attributes: &AttributeList) -> LambdaType {
     let blinding_factor = params.random_scalar();
     assert_eq!(params.hs.len(), attributes.len());
@@ -310,7 +310,7 @@ fn prepare_blind_sign(params: &mut Parameters, gamma: &bls::G1Projective,
 
 type PartialSignature = (bls::G1Projective, bls::G1Projective);
 
-fn blind_sign(params: &Parameters, secret_key: &SecretKey,
+pub fn blind_sign(params: &Parameters, secret_key: &SecretKey,
               gamma: bls::G1Projective, lambda: &LambdaType)
     -> PartialSignature {
     let (x, y) = secret_key;
@@ -348,7 +348,7 @@ fn elgamal_decrypt(private_key: &bls::Scalar, encrypted_value: &EncryptedValue)
     b - a * private_key
 }
 
-fn unblind(private_key: &bls::Scalar, encrypted_value: &EncryptedValue)
+pub fn unblind(private_key: &bls::Scalar, encrypted_value: &EncryptedValue)
     -> bls::G1Projective {
     elgamal_decrypt(private_key, encrypted_value)
 }
@@ -374,7 +374,7 @@ fn lagrange_basis2(indexes: &Vec<u64>) -> ScalarList {
     lagrange_result
 }
 
-fn aggregate_credential(signature_shares: &Vec<bls::G1Projective>, indexes: &Vec<u64>)
+pub fn aggregate_credential(signature_shares: &Vec<bls::G1Projective>, indexes: &Vec<u64>)
     -> bls::G1Projective {
     let lagrange = lagrange_basis2(indexes);
 
@@ -386,7 +386,7 @@ fn aggregate_credential(signature_shares: &Vec<bls::G1Projective>, indexes: &Vec
     aggregate_shares
 }
 
-fn prove_credential(params: &mut Parameters, verify_key: &(bls::G2Projective, PointList),
+pub fn prove_credential(params: &mut Parameters, verify_key: &(bls::G2Projective, PointList),
                     signature: &(bls::G1Projective, bls::G1Projective),
                     attributes: &Vec<bls::Scalar>)
     -> (bls::G2Projective, bls::G1Projective, (bls::G1Projective, bls::G1Projective)) {
@@ -409,7 +409,7 @@ fn prove_credential(params: &mut Parameters, verify_key: &(bls::G2Projective, Po
     (kappa, v, (blinded_commit_hash, blinded_sigma))
 }
 
-fn verify_credential(params: &Parameters, verify_key: &(bls::G2Projective, PointList),
+pub fn verify_credential(params: &Parameters, verify_key: &(bls::G2Projective, PointList),
                      proven_credential: &(bls::G2Projective, bls::G1Projective,
                                           (bls::G1Projective, bls::G1Projective))) -> bool
 {
