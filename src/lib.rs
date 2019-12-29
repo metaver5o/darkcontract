@@ -327,12 +327,13 @@ fn compute_challenge(points_g1: Vec<&bls::G1Projective>, points_g2: Vec<&bls::G2
 }
 
 type SignerProof = (bls::Scalar, bls::Scalar, Vec<bls::Scalar>, Vec<bls::Scalar>);
+type VerifyProof = (bls::Scalar, Vec<bls::Scalar>, bls::Scalar);
 
 fn make_signer_proof(params: &mut Parameters, gamma: &bls::G1Projective,
                      ciphertext: &Vec<EncryptedValue>, attribute_commit: &bls::G1Projective,
                      commit_hash: &bls::G1Projective, attribute_keys: &Vec<bls::Scalar>,
                      attributes: &AttributeList, blinding_factor: &bls::Scalar)
--> SignerProof {
+    -> SignerProof {
     assert_eq!(ciphertext.len(), attribute_keys.len());
     assert_eq!(ciphertext.len(), attributes.len());
 
@@ -366,9 +367,9 @@ fn make_signer_proof(params: &mut Parameters, gamma: &bls::G1Projective,
                 commit_hash,                            // h
                 &witness_commit_attributes              // Cw
             ];
-            points.extend(witness_commit_a.iter()); // Aw
-            points.extend(witness_commit_b.iter()); // Bw
-            points.extend(hs.iter());               // hs
+            points.extend(witness_commit_a.iter());     // Aw
+            points.extend(witness_commit_b.iter());     // Bw
+            points.extend(hs.iter());                   // hs
             points
         },
         vec![&bls::G2Projective::from(params.g2)]       // G2
@@ -432,6 +433,99 @@ fn verify_signer_proof(params: &Parameters, gamma: &bls::G1Projective,
             points
         },
         vec![&bls::G2Projective::from(params.g2)]       // G2
+    );
+
+    *challenge == recomputed_challenge
+}
+
+fn make_verify_proof(params: &mut Parameters, verify_key: &(bls::G2Projective, PointList),
+                     blind_commit_hash: &bls::G1Projective, attributes: &Vec<bls::Scalar>,
+                     blind: &bls::Scalar) -> VerifyProof
+{
+    let (alpha, beta) = verify_key;
+
+    // Random witness
+    let witness_kappa: Vec<_> = attributes.iter().map(|_| params.random_scalar()).collect();
+    let witness_blind = params.random_scalar();
+
+    // Witness commit
+    assert_eq!(witness_kappa.len(), beta.len());
+    let witness_commit_kappa = params.g2 * witness_blind + alpha + ecc_sum(
+        &witness_kappa.iter().zip(beta.iter()).map(|(witness, beta_i)| beta_i * witness).collect()
+    );
+    let witness_commit_blind = blind_commit_hash * witness_blind;
+
+    // Challenge
+    let g1 = bls::G1Projective::from(params.g1);
+    let g2 = bls::G2Projective::from(params.g2);
+    let hs: Vec<_> = params.hs.iter().map(|h| bls::G1Projective::from(h)).collect();
+    let challenge = compute_challenge(
+        {
+            let mut points: Vec<&_> = vec![
+                &g1,                                    // G1
+                &witness_commit_blind,                  // Bw
+            ];
+            points.extend(hs.iter());                   // hs
+            points
+        },
+        {
+            let mut points: Vec<&_> = vec![
+                &g2,                                    // G2
+                alpha,                                  // alpha
+                &witness_commit_kappa                   // Aw
+            ];
+            points.extend(beta.iter());                 // beta
+            points
+        }
+    );
+
+    // Responses
+    assert_eq!(witness_kappa.len(), attributes.len());
+    let response_kappa: Vec<_> =
+        witness_kappa.iter().zip(attributes.iter())
+            .map(|(witness, attribute)| witness - challenge * attribute)
+            .collect();
+    let response_blind = witness_blind - challenge * blind;
+    (challenge, response_kappa, response_blind)
+}
+
+fn verify_verify_proof(params: &Parameters, verify_key: &(bls::G2Projective, PointList),
+                       blind_commit_hash: &bls::G1Projective,
+                       kappa: &bls::G2Projective, v: &bls::G1Projective,
+                       proof: &VerifyProof) -> bool {
+    let (alpha, beta) = verify_key;
+    let (challenge, response_kappa, response_blind) = proof;
+
+    // Recompute witness commitments
+    let witness_commit_kappa = kappa * challenge + params.g2 * response_blind
+        + alpha * (bls::Scalar::one() - challenge)
+        + ecc_sum(
+            &beta.iter().zip(response_kappa.iter())
+                .map(|(beta_i, response)| beta_i * response).collect());
+    let witness_commit_blind = v * challenge + blind_commit_hash * response_blind;
+
+    // Challenge
+    let g1 = bls::G1Projective::from(params.g1);
+    let g2 = bls::G2Projective::from(params.g2);
+    let hs: Vec<_> = params.hs.iter().map(|h| bls::G1Projective::from(h)).collect();
+    let recomputed_challenge = compute_challenge(
+        {
+            let mut points: Vec<&_> = vec![
+                &g1,                                    // G1
+                &witness_commit_blind,                  // Bw
+            ];
+            points.extend(hs.iter());                   // hs
+            points
+        },
+        {
+            let mut points: Vec<&_> = vec![
+                &g2,                                    // G2
+                alpha,                                  // alpha
+                &witness_commit_kappa                   // Aw
+            ];
+            points.extend(beta.iter());                 // beta
+            points
+        }
     );
 
     *challenge == recomputed_challenge
@@ -551,7 +645,8 @@ pub fn aggregate_credential(signature_shares: &Vec<bls::G1Projective>, indexes: 
 pub fn prove_credential(params: &mut Parameters, verify_key: &(bls::G2Projective, PointList),
                     signature: &(bls::G1Projective, bls::G1Projective),
                     attributes: &Vec<bls::Scalar>)
-    -> (bls::G2Projective, bls::G1Projective, (bls::G1Projective, bls::G1Projective)) {
+    -> (bls::G2Projective, bls::G1Projective,
+        (bls::G1Projective, bls::G1Projective), VerifyProof) {
     let (alpha, beta) = verify_key;
     let (commit_hash, sigma) = signature;
     assert_eq!(attributes.len(), beta.len());
@@ -568,15 +663,22 @@ pub fn prove_credential(params: &mut Parameters, verify_key: &(bls::G2Projective
     );
     let v = blinded_commit_hash * blind;
 
-    (kappa, v, (blinded_commit_hash, blinded_sigma))
+    let proof = make_verify_proof(params, verify_key, &blinded_commit_hash, attributes, &blind);
+
+    (kappa, v, (blinded_commit_hash, blinded_sigma), proof)
 }
 
 pub fn verify_credential(params: &Parameters, verify_key: &(bls::G2Projective, PointList),
-                     proven_credential: &(bls::G2Projective, bls::G1Projective,
-                                          (bls::G1Projective, bls::G1Projective))) -> bool
+                         proven_credential: &(bls::G2Projective, bls::G1Projective,
+                                            (bls::G1Projective, bls::G1Projective),
+                                            VerifyProof)) -> bool
 {
-    let (_, beta) = verify_key;
-    let (kappa_projective, v, (blind_commit_projective, blinded_sigma)) = proven_credential;
+    //let (_, beta) = verify_key;
+    let (kappa_projective, v, (blind_commit_projective, blinded_sigma), proof) = proven_credential;
+    if !verify_verify_proof(params, verify_key, blind_commit_projective, kappa_projective,
+                            v, proof) {
+        return false
+    }
     let kappa = bls::G2Affine::from(kappa_projective);
     let blind_commit = bls::G1Affine::from(blind_commit_projective);
     let sigma_nu = bls::G1Affine::from(blinded_sigma + v);
