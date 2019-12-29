@@ -114,7 +114,7 @@ impl HashableGenerator for bls::G1Projective {
 fn compute_polynomial(coefficients: &Vec<bls::Scalar>, x_primitive: u64)
     -> bls::Scalar
 {
-    let x = bls::Scalar([x_primitive, 0, 0, 0]);
+    let x = bls::Scalar::from(x_primitive);
     coefficients.iter()
         .enumerate()
         .map(|(i, coefficient)| coefficient * x.pow(&[i as u64, 0, 0, 0]))
@@ -421,7 +421,8 @@ fn verify_credential(params: &Parameters, verify_key: &(bls::G2Projective, Point
     bls::pairing(&blind_commit, &kappa) == bls::pairing(&sigma_nu, &params.g2)
 }
 
-fn main() {
+#[test]
+fn it_works() {
     test_ttp_keygen();
 
     let (threshold, number_authorities) = (5, 7);
