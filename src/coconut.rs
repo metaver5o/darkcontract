@@ -41,20 +41,6 @@ pub struct Coconut<R: RngInstance> {
     number_authorities: u32
 }
 
-trait RngInstance {
-    fn random_number() -> u32;
-}
-
-struct ThreadRng;
-
-impl RngInstance for ThreadRng {
-    fn random_number() -> u32 {
-        thread_rng().gen()
-    }
-}
-
-// TODO: how to handle rng
-
 type ScalarList = Vec<bls::Scalar>;
 type PointList = Vec<bls::G2Projective>;
 type VerifyKey = (bls::G2Projective, PointList);
@@ -79,7 +65,6 @@ struct Credential {
 impl<R: RngInstance> Coconut<R> {
     fn new(attributes_size: usize, authorities_threshold: u32, authorities_total: u32) -> Self {
         Self {
-            _marker: std::marker::PhantomData
         }
     }
 
