@@ -1,3 +1,7 @@
+pub mod bls_extensions;
+pub mod coconut;
+
+/*
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_mut)]
@@ -233,9 +237,8 @@ pub fn aggregate_keys(params: &Parameters, verify_keys: &Vec<VerifyKey>)
     -> (bls::G2Projective, PointList) {
     let lagrange = lagrange_basis(verify_keys.len() as u64);
 
-    // TODO: make sense of this
     let (alpha, beta): (Vec<&bls::G2Projective>, Vec<&PointList>) =
-        verify_keys.iter().map(|&(ref a, ref b)| (a, b)).unzip();
+        verify_keys.iter().map(|(ref a, ref b)| (a, b)).unzip();
 
     let attributes_size = beta[0].len();
 
@@ -397,7 +400,7 @@ fn verify_signer_proof(params: &Parameters, gamma: &bls::G1Projective,
                        attribute_commit: &bls::G1Projective, commit_hash: &bls::G1Projective,
                        proof: &SignerProof) -> bool {
     let (a_factors, b_factors): (Vec<&_>, Vec<&_>) =
-        ciphertext.iter().map(|&(ref a, ref b)| (a, b)).unzip();
+        ciphertext.iter().map(|(ref a, ref b)| (a, b)).unzip();
     let (challenge, response_blind, response_keys, response_attributes) = proof;
 
     // Recompute witness commitments
@@ -610,6 +613,26 @@ pub fn unblind(private_key: &bls::Scalar, encrypted_value: &EncryptedValue)
     elgamal_decrypt(private_key, encrypted_value)
 }
 
+/*
+struct ScalarRange {
+    start: u64,
+    end: u64
+}
+
+impl Iterator for ScalarRange {
+    type Item = bls::Scalar;
+
+    fn next(&mut self) -> Option<bls::Scalar> {
+        if self.start >= self.end {
+            return None
+        }
+        let result = Some(bls::Scalar::from(self.start));
+        self.start += 1;
+        result
+    }
+}
+*/
+
 fn lagrange_basis2(indexes: &Vec<u64>) -> ScalarList {
     let x = bls::Scalar::zero();
     let mut lagrange_result = ScalarList::new();
@@ -774,3 +797,5 @@ fn it_works() {
 
     println!("Hello, world!");
 }
+*/
+
