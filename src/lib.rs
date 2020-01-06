@@ -1,5 +1,7 @@
 pub mod bls_extensions;
 pub mod coconut;
+pub mod elgamal;
+pub mod parameters;
 
 /*
 #![allow(dead_code)]
