@@ -89,3 +89,36 @@ impl HashableGenerator for bls::G1Projective {
     }
 }
 
+// ec_sum function, define a trait so we can generically sum ec points
+// Unfortunately library doesn't implement a shared trait for G1 and G2
+
+pub trait GeneratorPoint {
+    fn get_identity() -> Self;
+    fn add(&self, rhs: &Self) -> Self;
+}
+
+impl GeneratorPoint for bls::G1Projective {
+    fn get_identity() -> Self {
+        Self::identity()
+    }
+
+    fn add(&self, rhs: &Self) -> Self {
+        self + rhs
+    }
+}
+
+impl GeneratorPoint for bls::G2Projective {
+    fn get_identity() -> Self {
+        Self::identity()
+    }
+
+    fn add(&self, rhs: &Self) -> Self {
+        self + rhs
+    }
+}
+
+pub fn ec_sum<G: GeneratorPoint + Sized>(points: &Vec<G>) -> G {
+    points.iter()
+        .fold(G::get_identity(), |result, x| result.add(x))
+}
+

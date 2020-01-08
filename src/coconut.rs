@@ -3,6 +3,7 @@ use bls12_381 as bls;
 use crate::bls_extensions::*;
 use crate::elgamal::*;
 use crate::parameters::*;
+use crate::utility::*;
 
 pub struct SecretKey {
     x: bls::Scalar,
@@ -36,74 +37,6 @@ pub struct Coconut<R: RngInstance> {
     threshold: u32,
     authorities_total: u32
 }
-
-
-fn compute_polynomial<'a, I>(coefficients: I, x_primitive: u64)
-    -> bls::Scalar
-    where I: Iterator<Item=&'a bls::Scalar>
-{
-    let x = bls::Scalar::from(x_primitive);
-    coefficients
-        .enumerate()
-        .map(|(i, coefficient)| coefficient * x.pow(&[i as u64, 0, 0, 0]))
-        .fold(bls::Scalar::zero(), |result, x| result + x)
-}
-
-fn lagrange_basis(range_len: u64) -> Vec<bls::Scalar> {
-    let x = bls::Scalar::zero();
-    let mut lagrange_result = Vec::new();
-    for i in 1..=range_len {
-        let mut numerator = bls::Scalar::one();
-        let mut denominator = bls::Scalar::one();
-
-        for j in 1..=range_len {
-            if j == i {
-                continue;
-            }
-            numerator = numerator * (x - bls::Scalar::from(j));
-            denominator = denominator * (bls::Scalar::from(i) - bls::Scalar::from(j));
-        }
-
-        let result = numerator * denominator.invert().unwrap();
-        lagrange_result.push(result);
-    }
-    lagrange_result
-}
-
-fn ec_sum(points: &Vec<bls::G2Projective>) -> bls::G2Projective {
-    points.iter()
-        .fold(bls::G2Projective::identity(), |result, x| result + *x)
-}
-pub trait GeneratorPoint {
-    fn get_identity() -> Self;
-    fn add(&self, rhs: &Self) -> Self;
-}
-
-impl GeneratorPoint for bls::G1Projective {
-    fn get_identity() -> Self {
-        Self::identity()
-    }
-
-    fn add(&self, rhs: &Self) -> Self {
-        self + rhs
-    }
-}
-
-impl GeneratorPoint for bls::G2Projective {
-    fn get_identity() -> Self {
-        Self::identity()
-    }
-
-    fn add(&self, rhs: &Self) -> Self {
-        self + rhs
-    }
-}
-
-fn ecc_sum<G: GeneratorPoint + Sized>(points: &Vec<G>) -> G {
-    points.iter()
-        .fold(G::get_identity(), |result, x| result.add(x))
-}
-
 
 impl<R: RngInstance> Coconut<R> {
     pub fn new(attributes_size: usize, authorities_threshold: u32, authorities_total: u32) -> Self {
@@ -170,7 +103,7 @@ impl<R: RngInstance> Coconut<R> {
     }
 
     pub fn aggregate_keys(&self, verify_keys: &Vec<VerifyKey>) -> VerifyKey {
-        let lagrange = lagrange_basis(verify_keys.len() as u64);
+        let lagrange = lagrange_basis_from_range(verify_keys.len() as u64);
 
         let (alpha, beta): (Vec<&_>, Vec<&Vec<_>>) =
             verify_keys.iter().map(|ref key| (&key.alpha, &key.beta)).unzip();
@@ -246,8 +179,8 @@ fn test_multiparty_keygen() {
     let sigs_x: Vec<bls::G1Projective> = secret_keys.iter()
         .map(|secret_key| coconut.params.g1 * secret_key.x)
         .collect();
-    let l = lagrange_basis(6);
-    let sig = ecc_sum(&l.iter().zip(sigs_x.iter()).map(|(l_i, s_i)| s_i * l_i).collect());
+    let l = lagrange_basis_from_range(6);
+    let sig = ec_sum(&l.iter().zip(sigs_x.iter()).map(|(l_i, s_i)| s_i * l_i).collect());
 
     let ppair_1 = bls::pairing(&bls::G1Affine::from(sig), &coconut.params.g2);
     let ppair_2 = bls::pairing(&coconut.params.g1, &bls::G2Affine::from(verify_key.alpha));
