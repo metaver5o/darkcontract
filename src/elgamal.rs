@@ -12,7 +12,7 @@ pub struct ElGamalPrivateKey<'a, R: RngInstance> {
 
 pub struct ElGamalPublicKey<'a, R: RngInstance> {
     params: &'a Parameters<R>,
-    public_key: bls::G1Projective
+    pub public_key: bls::G1Projective
 }
 
 impl<'a, R: RngInstance> ElGamalPrivateKey<'a, R> {
@@ -38,7 +38,7 @@ impl<'a, R: RngInstance> ElGamalPrivateKey<'a, R> {
 
 impl<'a, R: RngInstance> ElGamalPublicKey<'a, R> {
     pub fn encrypt(&self, attribute: &bls::Scalar, attribute_key: &bls::Scalar,
-               shared_value: &bls::G1Projective) -> EncryptedValue {
+                   shared_value: &bls::G1Projective) -> EncryptedValue {
         (self.params.g1 * attribute_key,
          self.public_key * attribute_key + shared_value * attribute)
     }

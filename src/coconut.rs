@@ -3,6 +3,7 @@ use bls12_381 as bls;
 use crate::bls_extensions::*;
 use crate::elgamal::*;
 use crate::parameters::*;
+use crate::proofs::*;
 use crate::utility::*;
 
 pub struct SecretKey {
@@ -11,26 +12,25 @@ pub struct SecretKey {
 }
 
 pub struct VerifyKey {
-    alpha: bls::G2Projective,
-    beta: Vec<bls::G2Projective>
+    pub alpha: bls::G2Projective,
+    pub beta: Vec<bls::G2Projective>
 }
 
-//type Attribute = bls::Scalar;
-//type LambdaType = (bls::G1Projective, Vec<EncryptedValue>, SignerProof);
+pub type Attribute = bls::Scalar;
+pub type LambdaType = (bls::G1Projective, Vec<EncryptedValue>, SignerProof);
 
-//type SignerProof = (bls::Scalar, bls::Scalar, Vec<bls::Scalar>, Vec<bls::Scalar>);
-//type VerifyProof = (bls::Scalar, Vec<bls::Scalar>, bls::Scalar);
+type PartialSignature = (bls::G1Projective, bls::G1Projective);
+type SignatureShare = bls::G1Projective;
+type CombinedSignatureShares = bls::G1Projective;
+type Signature = (bls::G1Projective, bls::G1Projective);
 
-//type SignatureShare = bls::G1Projective;
-//type CombinedSignatureShares = bls::G1Projective;
-//type Signature = (bls::G1Projective, bls::G1Projective);
-
-//struct Credential {
-//    kappa: bls::G2Projective,
-//    v: bls::G1Projective,
-//    sigma_prime: (bls::G1Projective, bls::G1Projective),
-//    proof: VerifyProof
-//}
+pub struct Credential {
+    kappa: bls::G2Projective,
+    v: bls::G1Projective,
+    // sigma_price: (blind_commit_projective, blinded_sigma)
+    sigma_prime: (bls::G1Projective, bls::G1Projective),
+    proof: VerifyProof
+}
 
 pub struct Coconut<R: RngInstance> {
     params: Parameters<R>,
@@ -136,30 +136,135 @@ impl<R: RngInstance> Coconut<R> {
         }
     }
 
-/*
-    // This should just be hash to point
-    //pub fn compute_commit_hash(attribute_commit: &AttributeCommit) -> bls::G1Projective;
+    pub fn prepare_blind_sign(&self, shared_attribute_key: &ElGamalPublicKey<R>,
+                              attributes: &Vec<Attribute>) -> LambdaType {
+        let blinding_factor = self.params.random_scalar();
 
-    pub fn prepare_blind_sign(&mut self, shared_attribute_key: &ElGamalPublicKey,
-                              attributes: &Vec<Attribute>)
-        -> LambdaType;
+        assert_eq!(self.params.hs.len(), attributes.len());
+        let attribute_commit =
+            self.params.g1 * blinding_factor +
+            ec_sum(
+                &self.params.hs.iter()
+                .zip(attributes.iter())
+                .map(|(h_generator, attribute)| h_generator * attribute)
+                .collect()
+            );
+        let commit_hash = compute_commit_hash(&attribute_commit);
 
-    pub fn blind_sign(&self, secret_key: &SecretKey, shared_attribute_key: &ElGamalPublicKey,
+        let attribute_keys: Vec<_> =
+            (0..attributes.len())
+                .map(|_|
+                     self.params.random_scalar()
+                )
+                .collect();
+
+        let encrypted_attributes: Vec<(_, _)> =
+            attributes.iter().zip(attribute_keys.iter())
+                .map(|(attribute, key)|
+                     shared_attribute_key.encrypt(&attribute, &key, &commit_hash)
+                )
+                .collect();
+
+        let signer_proof = make_signer_proof(&self.params, shared_attribute_key,
+                                             &encrypted_attributes, &attribute_commit,
+                                             &commit_hash, &attribute_keys, &attributes,
+                                             &blinding_factor);
+
+        (attribute_commit, encrypted_attributes, signer_proof)
+    }
+
+    pub fn blind_sign(&self, secret_key: &SecretKey, shared_attribute_key: &ElGamalPublicKey<R>,
                       lambda: &LambdaType)
-        -> Result<PartialSignature, &'static str>;
+        -> Result<PartialSignature, &'static str> {
+        let (attribute_commit, encrypted_attributes, signer_proof) = lambda;
 
-    pub fn unblind(&self, private_key: &ElGamalPrivateKey, encrypted_value: &EncryptedValue)
-        -> SignatureShare;
+        assert_eq!(encrypted_attributes.len(), self.params.hs.len());
+        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) =
+            encrypted_attributes.iter().map(|&(ref a, ref b)| (a, b)).unzip();
 
-    pub fn aggregate(signature_shares: &Vec<SignatureShare>, indexes: &Vec<u64>)
-        -> CombinedSignatureShares;
+        // Issue signature
+        let commit_hash = compute_commit_hash(attribute_commit);
 
-    pub fn make_credential(&mut self, verify_key: &VerifyKey,
-                           signature: &Signature, attributes: &Vec<Attribute>) -> Credential;
+        // Verify proof here
+        if !verify_signer_proof(&self.params, &shared_attribute_key.public_key,
+                                encrypted_attributes, attribute_commit, &commit_hash,
+                                signer_proof) {
+            return Err("verify proof failed")
+        }
+
+        // TODO: Add public attributes - need to see about selective reveal
+        let signature_a = ec_sum(
+            &secret_key.y.iter().zip(a_factors.iter())
+                .map(|(y_j, a)| *a * y_j)
+                .collect()
+        );
+
+        let signature_b = commit_hash * secret_key.x
+            + ec_sum(
+                &secret_key.y.iter().zip(b_factors.iter())
+                    .map(|(y_j, b)| *b * y_j)
+                    .collect()
+            );
+
+        Ok((signature_a, signature_b))
+    }
+
+    pub fn unblind(&self, private_key: &ElGamalPrivateKey<R>, encrypted_value: &EncryptedValue)
+        -> SignatureShare {
+        private_key.decrypt(encrypted_value)
+    }
+
+    pub fn aggregate(&self, signature_shares: &Vec<SignatureShare>, indexes: Vec<u64>)
+        -> CombinedSignatureShares {
+        let lagrange = lagrange_basis(indexes.iter());
+
+        let aggregate_shares = ec_sum(
+            &signature_shares.iter().zip(lagrange.iter())
+                .map(|(signature_share, lagrange_i)| signature_share * lagrange_i)
+                .collect()
+        );
+        aggregate_shares
+    }
+
+    pub fn make_credential(&self, verify_key: &VerifyKey,
+                           signature: &Signature, attributes: &Vec<Attribute>) -> Credential {
+        let (commit_hash, sigma) = signature;
+        assert_eq!(attributes.len(), verify_key.beta.len());
+
+        let blind_prime = self.params.random_scalar();
+        let (blinded_commit_hash, blinded_sigma) = (commit_hash * blind_prime, sigma * blind_prime);
+
+        let blind = self.params.random_scalar();
+
+        let kappa = self.params.g2 * blind + verify_key.alpha + ec_sum(
+            &verify_key.beta.iter().zip(attributes.iter())
+                .map(|(beta_i, attribute)| beta_i * attribute)
+                .collect()
+        );
+        let v = blinded_commit_hash * blind;
+
+        let proof = make_verify_proof(&self.params, verify_key, &blinded_commit_hash,
+                                      attributes, &blind);
+
+        Credential {
+            kappa: kappa,
+            v: v,
+            sigma_prime: (blinded_commit_hash, blinded_sigma),
+            proof
+        }
+    }
 
     pub fn verify_credential(&self, verify_key: &VerifyKey,
-                             proven_credential: &Credential) -> bool;
-*/
+                             credential: &Credential) -> bool {
+        if !verify_verify_proof(&self.params, verify_key, &credential.sigma_prime.0,
+                                &credential.kappa, &credential.v, &credential.proof) {
+            return false
+        }
+        let kappa = bls::G2Affine::from(credential.kappa);
+        let blind_commit = bls::G1Affine::from(credential.sigma_prime.0);
+        let sigma_nu = bls::G1Affine::from(credential.sigma_prime.1 + credential.v);
+        bls::pairing(&blind_commit, &kappa) == bls::pairing(&sigma_nu, &self.params.g2)
+    }
 }
 
 //extern crate hex_slice;
@@ -185,5 +290,49 @@ fn test_multiparty_keygen() {
     let ppair_1 = bls::pairing(&bls::G1Affine::from(sig), &coconut.params.g2);
     let ppair_2 = bls::pairing(&coconut.params.g1, &bls::G2Affine::from(verify_key.alpha));
     assert_eq!(ppair_1, ppair_2);
+}
+
+#[test]
+fn test_multiparty_coconut() {
+    let attributes_size = 2;
+    let (threshold, number_authorities) = (5, 7);
+
+    let coconut = Coconut::<OsRngInstance>::new(attributes_size, threshold, number_authorities);
+
+    let (secret_keys, verify_keys) = coconut.multiparty_keygen();
+
+    let verify_key = coconut.aggregate_keys(&verify_keys);
+
+    let d = ElGamalPrivateKey::new(&coconut.params);
+    let gamma = d.to_public();
+
+    let attributes = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
+
+    let lambda = coconut.prepare_blind_sign(&gamma, &attributes);
+
+    let blind_signatures: Vec<_> =
+        secret_keys.iter()
+            .map(|secret_key| coconut.blind_sign(secret_key, &gamma, &lambda).unwrap())
+            .collect();
+
+    // Signatures should be a struct, with an authority ID inside them
+    let mut signature_shares: Vec<_> =
+        blind_signatures.iter()
+            .map(|blind_signature| coconut.unblind(&d, blind_signature))
+            .collect();
+    let mut indexes: Vec<u64> = (1u64..=signature_shares.len() as u64).collect();
+
+    signature_shares.remove(0);
+    indexes.remove(0);
+    signature_shares.remove(4);
+    indexes.remove(4);
+
+    let commit_hash = compute_commit_hash(&lambda.0);
+    let signature = (commit_hash, coconut.aggregate(&signature_shares, indexes));
+
+    let credential = coconut.make_credential(&verify_key, &signature, &attributes);
+
+    let is_verify = coconut.verify_credential(&verify_key, &credential);
+    assert!(is_verify);
 }
 
