@@ -33,18 +33,39 @@ impl RandomScalar for bls::Scalar {
     }
 }
 
-// Hash a message using Sha512, and then return the first 48 bytes
+// Hash a message using Sha512, and then return the first N bytes
 // used to map to a curve point.
-fn sha512_hash(message: &[u8]) -> [u8; 48] {
-    let mut hasher = Sha512::new();
-    hasher.input(message);
-    let hash_result = hasher.result();
-    assert_eq!(hash_result.len(), 64);
+macro_rules! make_hash {
+    ($message:ident, $i:ident, $array_size:literal) => {{
+        let mut hash_data = [0u8; $array_size];
 
-    let mut hash_data = [0u8; 48];
-    hash_data.copy_from_slice(&hash_result[0..48]);
-    //println!("{:x}", hash_data.as_hex());
-    hash_data
+        let i_data = $i.to_le_bytes();
+
+        const HASH_SIZE: usize = 64;
+        let mut j = 0;
+        while j * HASH_SIZE < $array_size {
+            let j_data = j.to_le_bytes();
+
+            let mut hasher = Sha512::new();
+            hasher.input($message);
+            hasher.input(&i_data);
+            hasher.input(&j_data);
+            let hash_result = hasher.result();
+
+            let start = j * HASH_SIZE;
+            let end =
+                if start + HASH_SIZE > $array_size {
+                    $array_size
+                } else {
+                    start + HASH_SIZE
+                };
+            hash_data.copy_from_slice(&hash_result[start..end]);
+
+            j += 1;
+        }
+
+        hash_data
+    }}
 }
 
 pub trait HashableGenerator {
@@ -55,13 +76,7 @@ pub trait HashableGenerator {
 impl HashableGenerator for bls::G1Affine {
     fn hash_to_point(message: &[u8]) -> Self {
         for i in 0u32 .. {
-            let i_data = i.to_le_bytes();
-
-            let mut data = Vec::with_capacity(message.len() + i_data.len());
-            data.extend_from_slice(message);
-            data.extend_from_slice(&i_data);
-
-            let hash = sha512_hash(data.as_slice());
+            let hash = make_hash!(message, i, 48);
 
             let point = {
                 let point_optional = Self::from_compressed_unchecked(&hash);
