@@ -62,11 +62,13 @@ pub fn make_signer_proof<R: RngInstance>(params: &Parameters<R>, gamma: &ElGamal
         witness_keys.iter().zip(witness_attributes.iter())
             .map(|(witness_key, witness_attribute)|
                  gamma.public_key * witness_key + commit_hash * witness_attribute).collect();
+
     assert_eq!(witness_attributes.len(), params.hs.len());
     let witness_commit_attributes =
-        params.g1 * witness_blind + ec_sum(
-            &params.hs.iter().zip(witness_attributes.iter())
-                .map(|(h, witness)| h * witness).collect());
+        params.g1 * witness_blind
+        + params.hs.iter().zip(witness_attributes.iter())
+            .map(|(h, witness)| h * witness)
+            .sum::<bls::G1Projective>();
 
 
     // Challenge
@@ -126,9 +128,12 @@ pub fn verify_signer_proof<R: RngInstance>(params: &Parameters<R>, gamma: &bls::
                  *b_i * challenge + gamma * response_key + commit_hash * response_attribute)
             .collect();
     let witness_commit_attributes =
-        attribute_commit * challenge + params.g1 * response_blind + ec_sum(
-            &params.hs.iter().zip(response_attributes.iter())
-                .map(|(h_i, response)| h_i * response).collect());
+        attribute_commit * challenge
+        + params.g1 * response_blind
+        + params.hs.iter()
+            .zip(response_attributes.iter())
+            .map(|(h_i, response)| h_i * response)
+            .sum::<bls::G1Projective>();
 
     // Challenge
     let g1 = bls::G1Projective::from(params.g1);
@@ -164,9 +169,13 @@ pub fn make_verify_proof<R: RngInstance>(params: &Parameters<R>,
 
     // Witness commit
     assert_eq!(witness_kappa.len(), verify_key.beta.len());
-    let witness_commit_kappa = params.g2 * witness_blind + verify_key.alpha + ec_sum(
-        &witness_kappa.iter().zip(verify_key.beta.iter()).map(|(witness, beta_i)| beta_i * witness).collect()
-    );
+    let witness_commit_kappa =
+        params.g2 * witness_blind
+        + verify_key.alpha
+        + witness_kappa.iter()
+            .zip(verify_key.beta.iter())
+            .map(|(witness, beta_i)| beta_i * witness)
+            .sum::<bls::G2Projective>();
     let witness_commit_blind = blind_commit_hash * witness_blind;
 
     // Challenge
@@ -212,11 +221,14 @@ pub fn verify_verify_proof<R: RngInstance>(params: &Parameters<R>,
     let (challenge, response_kappa, response_blind) = proof;
 
     // Recompute witness commitments
-    let witness_commit_kappa = kappa * challenge + params.g2 * response_blind
+    let witness_commit_kappa =
+        kappa * challenge
+        + params.g2 * response_blind
         + verify_key.alpha * (bls::Scalar::one() - challenge)
-        + ec_sum(
-            &verify_key.beta.iter().zip(response_kappa.iter())
-                .map(|(beta_i, response)| beta_i * response).collect());
+        + verify_key.beta.iter()
+            .zip(response_kappa.iter())
+            .map(|(beta_i, response)| beta_i * response)
+            .sum::<bls::G2Projective>();
     let witness_commit_blind = v * challenge + blind_commit_hash * response_blind;
 
     // Challenge

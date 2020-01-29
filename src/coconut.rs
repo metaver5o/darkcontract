@@ -113,21 +113,20 @@ impl<R: RngInstance> Coconut<R> {
 
         assert_eq!(lagrange.len(), alpha.len());
 
-        let aggregate_alpha = ec_sum(
-            &alpha.iter().zip(lagrange.iter())
+        let aggregate_alpha = 
+            alpha.iter().zip(lagrange.iter())
                 .map(
                     |(a, l)|
                     *a * l
                 )
-                .collect());
-        let aggregate_beta: Vec<_> = (0..attributes_size).map(|i| ec_sum(
-            &beta.iter().zip(lagrange.iter())
+                .sum();
+        let aggregate_beta: Vec<_> = (0..attributes_size).map(|i|
+            beta.iter().zip(lagrange.iter())
                 .map(
                     |(b, l)|
                     b[i] * l
                 )
-                .collect()
-            )
+                .sum()
         ).collect();
 
         return VerifyKey {
@@ -142,13 +141,11 @@ impl<R: RngInstance> Coconut<R> {
 
         assert_eq!(self.params.hs.len(), attributes.len());
         let attribute_commit =
-            self.params.g1 * blinding_factor +
-            ec_sum(
-                &self.params.hs.iter()
+            self.params.g1 * blinding_factor
+            + self.params.hs.iter()
                 .zip(attributes.iter())
                 .map(|(h_generator, attribute)| h_generator * attribute)
-                .collect()
-            );
+                .sum::<bls::G1Projective>();
         let commit_hash = compute_commit_hash(&attribute_commit);
 
         let attribute_keys: Vec<_> =
@@ -193,18 +190,17 @@ impl<R: RngInstance> Coconut<R> {
         }
 
         // TODO: Add public attributes - need to see about selective reveal
-        let signature_a = ec_sum(
-            &secret_key.y.iter().zip(a_factors.iter())
+        let signature_a = 
+            secret_key.y.iter()
+                .zip(a_factors.iter())
                 .map(|(y_j, a)| *a * y_j)
-                .collect()
-        );
+                .sum();
 
         let signature_b = commit_hash * secret_key.x
-            + ec_sum(
-                &secret_key.y.iter().zip(b_factors.iter())
-                    .map(|(y_j, b)| *b * y_j)
-                    .collect()
-            );
+            + secret_key.y.iter()
+                .zip(b_factors.iter())
+                .map(|(y_j, b)| *b * y_j)
+                .sum::<bls::G1Projective>();
 
         Ok((signature_a, signature_b))
     }
@@ -218,11 +214,10 @@ impl<R: RngInstance> Coconut<R> {
         -> CombinedSignatureShares {
         let lagrange = lagrange_basis(indexes.iter());
 
-        let aggregate_shares = ec_sum(
-            &signature_shares.iter().zip(lagrange.iter())
+        let aggregate_shares = 
+            signature_shares.iter().zip(lagrange.iter())
                 .map(|(signature_share, lagrange_i)| signature_share * lagrange_i)
-                .collect()
-        );
+                .sum();
         aggregate_shares
     }
 
@@ -236,11 +231,11 @@ impl<R: RngInstance> Coconut<R> {
 
         let blind = self.params.random_scalar();
 
-        let kappa = self.params.g2 * blind + verify_key.alpha + ec_sum(
-            &verify_key.beta.iter().zip(attributes.iter())
+        let kappa = self.params.g2 * blind + verify_key.alpha + 
+            verify_key.beta.iter()
+                .zip(attributes.iter())
                 .map(|(beta_i, attribute)| beta_i * attribute)
-                .collect()
-        );
+                .sum::<bls::G2Projective>();
         let v = blinded_commit_hash * blind;
 
         let proof = make_verify_proof(&self.params, verify_key, &blinded_commit_hash,
@@ -285,7 +280,7 @@ fn test_multiparty_keygen() {
         .map(|secret_key| coconut.params.g1 * secret_key.x)
         .collect();
     let l = lagrange_basis_from_range(6);
-    let sig = ec_sum(&l.iter().zip(sigs_x.iter()).map(|(l_i, s_i)| s_i * l_i).collect());
+    let sig = &l.iter().zip(sigs_x.iter()).map(|(l_i, s_i)| s_i * l_i).sum();
 
     let ppair_1 = bls::pairing(&bls::G1Affine::from(sig), &coconut.params.g2);
     let ppair_2 = bls::pairing(&coconut.params.g1, &bls::G2Affine::from(verify_key.alpha));

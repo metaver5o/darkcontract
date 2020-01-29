@@ -68,12 +68,37 @@ macro_rules! make_hash {
     }}
 }
 
-pub trait HashableGenerator {
+pub trait HashableAffine {
     fn hash_to_point(message: &[u8]) -> Self;
+
+    /*fn hash_to_point(message: &[u8]) -> Self {
+        for i in 0u32 .. {
+            let hash = make_hash!(message, i, 48);
+
+            let point = {
+                let point_optional = Self::from_compressed_unchecked(&hash);
+                if point_optional.is_none().unwrap_u8() == 1 {
+                    continue;
+                }
+                let affine_point = point_optional.unwrap();
+                Self::clear_cofactor(&affine_point)
+            };
+
+            assert_eq!(bool::from(point.is_on_curve()), true);
+            assert_eq!(bool::from(point.is_torsion_free()), true);
+
+            return point;
+        }
+        unreachable!();
+    }*/
+
+    fn clear_cofactor(affine_point: &Self) -> Self;
+
+    fn is_valid(&self) -> bool;
 }
 
 // Extend G1 point with a hash_to_point() method.
-impl HashableGenerator for bls::G1Affine {
+impl HashableAffine for bls::G1Affine {
     fn hash_to_point(message: &[u8]) -> Self {
         for i in 0u32 .. {
             let hash = make_hash!(message, i, 48);
@@ -84,56 +109,34 @@ impl HashableGenerator for bls::G1Affine {
                     continue;
                 }
                 let affine_point = point_optional.unwrap();
-                let projective_point = bls::G1Projective::from(affine_point).clear_cofactor();
-                Self::from(projective_point)
+                Self::clear_cofactor(&affine_point)
             };
 
-            assert_eq!(bool::from(point.is_on_curve()), true);
-            assert_eq!(bool::from(point.is_torsion_free()), true);
+            assert!(point.is_valid());
 
             return point;
         }
         unreachable!();
     }
+
+    fn clear_cofactor(affine_point: &Self) -> Self {
+        let projective_point = bls::G1Projective::from(affine_point).clear_cofactor();
+        Self::from(projective_point)
+    }
+
+    fn is_valid(&self) -> bool {
+        bool::from(self.is_on_curve()) && bool::from(self.is_torsion_free())
+    }
+}
+
+pub trait HashableProjective {
+    fn hash_to_point(message: &[u8]) -> Self;
 }
 
 // Add conversions for the projective version of G1
-impl HashableGenerator for bls::G1Projective {
+impl HashableProjective for bls::G1Projective {
     fn hash_to_point(message: &[u8]) -> Self {
         bls::G1Projective::from(bls::G1Affine::hash_to_point(&message))
     }
-}
-
-// ec_sum function, define a trait so we can generically sum ec points
-// Unfortunately library doesn't implement a shared trait for G1 and G2
-
-pub trait GeneratorPoint {
-    fn get_identity() -> Self;
-    fn add(&self, rhs: &Self) -> Self;
-}
-
-impl GeneratorPoint for bls::G1Projective {
-    fn get_identity() -> Self {
-        Self::identity()
-    }
-
-    fn add(&self, rhs: &Self) -> Self {
-        self + rhs
-    }
-}
-
-impl GeneratorPoint for bls::G2Projective {
-    fn get_identity() -> Self {
-        Self::identity()
-    }
-
-    fn add(&self, rhs: &Self) -> Self {
-        self + rhs
-    }
-}
-
-pub fn ec_sum<G: GeneratorPoint + Sized>(points: &Vec<G>) -> G {
-    points.iter()
-        .fold(G::get_identity(), |result, x| result.add(x))
 }
 
