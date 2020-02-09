@@ -1,5 +1,6 @@
 use hex_slice::AsHex;
 use bls12_381 as bls;
+use itertools::izip;
 use sha2::{Digest, Sha256};
 
 use crate::bls_extensions::*;
@@ -8,11 +9,19 @@ use crate::elgamal::*;
 use crate::parameters::*;
 use crate::utility::*;
 
-struct ProofHasher<'a> {
-    hasher: &'a mut Sha256,
+struct ProofHasher {
+    g1_datas: Vec<[u8; 48]>,
+    g2_datas: Vec<[u8; 96]>
 }
 
-impl<'a> ProofHasher<'a> {
+impl ProofHasher {
+    fn new() -> Self {
+        Self {
+            g1_datas: Vec::new(),
+            g2_datas: Vec::new()
+        }
+    }
+
     fn add_g1(&mut self, point: &bls::G1Projective) {
         let point = bls::G1Affine::from(point);
         self.add_g1_affine(&point);
@@ -25,15 +34,42 @@ impl<'a> ProofHasher<'a> {
 
     fn add_g1_affine(&mut self, point: &bls::G1Affine) {
         let data = point.to_compressed();
-        self.hasher.input(&data[0..32]);
-        self.hasher.input(&data[32..]);
+        self.g1_datas.push(data);
     }
 
     fn add_g2_affine(&mut self, point: &bls::G2Affine) {
         let data = point.to_compressed();
-        self.hasher.input(&data[0..32]);
-        self.hasher.input(&data[32..64]);
-        self.hasher.input(&data[64..]);
+        self.g2_datas.push(data);
+    }
+
+    fn finish(&self) -> bls::Scalar {
+        for i in 0u32.. {
+            let mut hasher = Sha256::new();
+
+            let i_data = i.to_le_bytes();
+            hasher.input(&i_data);
+
+            for data in &self.g1_datas {
+                hasher.input(&data[0..32]);
+                hasher.input(&data[32..]);
+            }
+            for data in &self.g2_datas {
+                hasher.input(&data[0..32]);
+                hasher.input(&data[32..64]);
+                hasher.input(&data[64..]);
+            }
+            let hash_result = hasher.result();
+
+            // TODO: how can I fix this? Why not &hash_result[0...32]??
+            let mut hash_data = [0u8; 32];
+            hash_data.copy_from_slice(hash_result.as_slice());
+
+            let challenge = bls::Scalar::from_bytes(&hash_data);
+            if challenge.is_some().unwrap_u8() == 1 {
+                return challenge.unwrap();
+            }
+        }
+        unreachable!();
     }
 }
 
@@ -229,13 +265,15 @@ impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
         gamma: &'a ElGamalPublicKey<'a, R>,
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
-        ciphertext: &Vec<EncryptedValue>,
+        ciphertexts: &Vec<EncryptedValue>,
     ) -> SignatureRequestCommitments<R> {
-        let commit_attributes = attribute_commit * challenge
-            + self.params.g1 * self.response_blind
-            + izip(&self.params.hs, &self.response_attributes)
-                .map(|(h_i, response)| h_i * response)
-                .sum::<bls::G1Projective>();
+
+        // c c_m + r_r G_1 + sum(r_m H)
+        let mut commit_attributes = attribute_commit * challenge
+            + self.params.g1 * self.response_blind;
+        for (h, response) in izip(&self.params.hs, &self.response_attributes) {
+            commit_attributes += h * response;
+        }
 
         SignatureRequestCommitments {
             params: self.params,
@@ -246,13 +284,14 @@ impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
 
             commit_attributes,
 
-            commit_keys: izip(&self.response_attributes, &self.response_keys)
-                .map(|(witness_attribute, witness_key)| {
+            commit_keys: izip!(&self.response_attributes, &self.response_keys, ciphertexts)
+                .map(|(response_attribute, response_key, ciphertext)| {
                     (
-                        // w_k_j G_1
-                        self.params.g1 * witness_key,
-                        // w_m_j h + w_k_j Y
-                        commit_hash * witness_attribute + gamma.public_key * witness_key,
+                        // c A_i + r_k_i G1
+                        ciphertext.0 * challenge + self.params.g1 * response_key,
+                        // c B_i + r_k_i Y + r_m_i h
+                        ciphertext.1 * challenge + gamma.public_key * response_key
+                            + commit_hash * response_attribute
                     )
                 })
                 .collect(),
@@ -822,7 +861,6 @@ fn test_signature_request_proof() {
     // random k
     let proof_builder = SignatureRequestProofBuilder::new(&params, &attributes,
                                                           &attribute_keys, &blinding_factor);
-    /*
     // R = k G
     let commitments = proof_builder.commitments(&gamma, &commit_hash, &attribute_commit);
 
@@ -839,14 +877,14 @@ fn test_signature_request_proof() {
     //
     // R = s G - c P
     let verify_commitments = proof.commitments(&challenge,
-                                               &gamma, &commit_hash, &attribute_comit,
+                                               &gamma, &commit_hash, &attribute_commit,
                                                &ciphertext);
+
     // c = H(R || ...)
     let mut verify_hasher = ProofHasher::new();
     verify_commitments.commit(&mut verify_hasher);
     let verify_challenge = verify_hasher.finish();
     // c == c'
     assert_eq!(challenge, verify_challenge);
-    */
 }
 
