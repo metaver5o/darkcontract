@@ -107,7 +107,7 @@ struct SignatureRequestProofBuilder<'a, R: RngInstance> {
     witness_keys: Vec<bls::Scalar>,
 }
 
-struct SignatureRequestCommitments<'a, R: RngInstance> {
+struct SignatureRequestProofCommitments<'a, R: RngInstance> {
     // Base points
     params: &'a Parameters<R>,
     gamma: &'a ElGamalPublicKey<'a, R>,
@@ -146,7 +146,7 @@ impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
         gamma: &'a ElGamalPublicKey<'a, R>,
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
-    ) -> SignatureRequestCommitments<'a, R> {
+    ) -> SignatureRequestProofCommitments<'a, R> {
         assert_eq!(self.witness_attributes.len(), self.params.hs.len());
 
         // w_o G_1 + sum(w_m H_j)
@@ -155,7 +155,7 @@ impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
             commit_attributes += h * witness;
         }
 
-        SignatureRequestCommitments {
+        SignatureRequestProofCommitments {
             params: self.params,
             gamma,
             commit_hash,
@@ -229,7 +229,7 @@ impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
     }
 }
 
-impl<'a, R: RngInstance> SignatureRequestCommitments<'a, R> {
+impl<'a, R: RngInstance> SignatureRequestProofCommitments<'a, R> {
     fn commit(&self, hasher: &mut ProofHasher) {
         // Add base points we use
         hasher.add_g1_affine(&self.params.g1);
@@ -253,6 +253,7 @@ impl<'a, R: RngInstance> SignatureRequestCommitments<'a, R> {
 struct SignatureRequestProof<'a, R: RngInstance> {
     params: &'a Parameters<R>,
 
+    // Responses
     response_blind: bls::Scalar,
     response_attributes: Vec<bls::Scalar>,
     response_keys: Vec<bls::Scalar>,
@@ -266,7 +267,7 @@ impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
         ciphertexts: &Vec<EncryptedValue>,
-    ) -> SignatureRequestCommitments<R> {
+    ) -> SignatureRequestProofCommitments<R> {
 
         // c c_m + r_r G_1 + sum(r_m H)
         let mut commit_attributes = attribute_commit * challenge
@@ -275,7 +276,7 @@ impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
             commit_attributes += h * response;
         }
 
-        SignatureRequestCommitments {
+        SignatureRequestProofCommitments {
             params: self.params,
 
             gamma,
@@ -295,6 +296,138 @@ impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
                     )
                 })
                 .collect(),
+        }
+    }
+}
+
+struct CredentialProofBuilder<'a, R: RngInstance> {
+    params: &'a Parameters<R>,
+
+    // Secrets
+    attributes: &'a Vec<bls::Scalar>,
+    blind: &'a bls::Scalar,
+
+    // Witnesses
+    witness_kappa: Vec<bls::Scalar>,
+    witness_blind: bls::Scalar,
+}
+
+struct CredentialProofCommitments<'a, R: RngInstance> {
+    // Base points
+    params: &'a Parameters<R>,
+    verify_key: &'a VerifyKey,
+    blind_commit_hash: &'a bls::G1Projective,
+
+    // Commitments
+    commit_kappa: bls::G2Projective,
+    commit_blind: bls::G1Projective
+}
+
+struct CredentialProof<'a, R: RngInstance> {
+    params: &'a Parameters<R>,
+
+    response_kappa: Vec<bls::Scalar>,
+    response_blind: bls::Scalar
+}
+
+impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
+    fn new(
+        params: &'a Parameters<R>,
+        attributes: &'a Vec<bls::Scalar>,
+        blind: &'a bls::Scalar,
+    ) -> Self {
+        Self {
+            params,
+
+            attributes,
+            blind,
+
+            witness_kappa: params.random_scalars(attributes.len()),
+            witness_blind: params.random_scalar()
+        }
+    }
+
+    fn commitments (
+        &self,
+        verify_key: &'a VerifyKey,
+        blind_commit_hash: &'a bls::G1Projective,
+    ) -> CredentialProofCommitments<'a, R> {
+        assert_eq!(self.witness_kappa.len(), verify_key.beta.len());
+
+        CredentialProofCommitments {
+            params: self.params,
+            verify_key,
+            blind_commit_hash,
+
+            commit_kappa: self.params.g2 * self.witness_blind + verify_key.alpha
+                + self.witness_kappa
+                    .iter()
+                    .zip(verify_key.beta.iter())
+                    .map(|(witness, beta_i)| beta_i * witness)
+                    .sum::<bls::G2Projective>(),
+
+            commit_blind: blind_commit_hash * self.witness_blind,
+        }
+    }
+
+    fn finish(&self, challenge: &bls::Scalar) -> CredentialProof<'a, R> {
+        assert_eq!(self.witness_kappa.len(), self.attributes.len());
+
+        CredentialProof {
+            params: self.params,
+
+            response_kappa: izip!(&self.witness_kappa, self.attributes)
+                .map(|(witness, attribute)| witness - challenge * attribute)
+                .collect(),
+
+            response_blind: self.witness_blind - challenge * self.blind,
+        }
+    }
+}
+
+impl<'a, R: RngInstance> CredentialProofCommitments<'a, R> {
+    fn commit(&self, hasher: &mut ProofHasher) {
+        // Add base points we use
+        hasher.add_g1_affine(&self.params.g1);
+        hasher.add_g2_affine(&self.params.g2);
+        for h in &self.params.hs {
+            hasher.add_g1_affine(h);
+        }
+        hasher.add_g2(&self.verify_key.alpha);
+        for beta in &self.verify_key.beta {
+            hasher.add_g2(beta);
+        }
+
+        hasher.add_g2(&self.commit_kappa);
+        hasher.add_g1(&self.commit_blind);
+    }
+}
+
+impl<'a, R: RngInstance> CredentialProof<'a, R> {
+    fn commitments(
+        &self,
+        challenge: &bls::Scalar,
+        verify_key: &'a VerifyKey,
+        blind_commit_hash: &'a bls::G1Projective,
+        kappa: &bls::G2Projective,
+        v: &bls::G1Projective,
+    ) -> CredentialProofCommitments<R> {
+
+        // c K + r_t G2 + (1 - c) A + sum(r_m_i B_i)
+        let mut commit_kappa = kappa * challenge + self.params.g2 * self.response_blind
+            + verify_key.alpha * (bls::Scalar::one() - challenge);
+        for (beta_i, response) in izip(&verify_key.beta, &self.response_kappa) {
+            commit_kappa += beta_i * response;
+        }
+
+        CredentialProofCommitments {
+            params: self.params,
+            verify_key,
+            blind_commit_hash,
+
+            commit_kappa,
+
+            commit_blind: v * challenge + blind_commit_hash * self.response_blind
         }
     }
 }
@@ -855,36 +988,71 @@ fn test_signature_request_proof() {
                                                   &kappa, &v, &verify_proof);
     assert!(verify_proof_verify);
 
-    //
-    // Signing steps
-    //
-    // random k
-    let proof_builder = SignatureRequestProofBuilder::new(&params, &attributes,
-                                                          &attribute_keys, &blinding_factor);
-    // R = k G
-    let commitments = proof_builder.commitments(&gamma, &commit_hash, &attribute_commit);
+    {
+        //
+        // Signing steps
+        //
+        // random k
+        let proof_builder = SignatureRequestProofBuilder::new(&params, &attributes,
+                                                              &attribute_keys, &blinding_factor);
+        // R = k G
+        let commitments = proof_builder.commitments(&gamma, &commit_hash, &attribute_commit);
 
-    // c = H(R || ...)
-    let mut hasher = ProofHasher::new();
-    commitments.commit(&mut hasher);
-    let challenge = hasher.finish();
+        // c = H(R || ...)
+        let mut hasher = ProofHasher::new();
+        commitments.commit(&mut hasher);
+        let challenge = hasher.finish();
 
-    // s = k + c x
-    let proof = proof_builder.finish(&challenge);
+        // s = k + c x
+        let proof = proof_builder.finish(&challenge);
 
-    //
-    // Verify steps
-    //
-    // R = s G - c P
-    let verify_commitments = proof.commitments(&challenge,
-                                               &gamma, &commit_hash, &attribute_commit,
-                                               &ciphertext);
+        //
+        // Verify steps
+        //
+        // R = s G - c P
+        let verify_commitments = proof.commitments(&challenge,
+                                                   &gamma, &commit_hash, &attribute_commit,
+                                                   &ciphertext);
 
-    // c = H(R || ...)
-    let mut verify_hasher = ProofHasher::new();
-    verify_commitments.commit(&mut verify_hasher);
-    let verify_challenge = verify_hasher.finish();
-    // c == c'
-    assert_eq!(challenge, verify_challenge);
+        // c = H(R || ...)
+        let mut verify_hasher = ProofHasher::new();
+        verify_commitments.commit(&mut verify_hasher);
+        let verify_challenge = verify_hasher.finish();
+        // c == c'
+        assert_eq!(challenge, verify_challenge);
+    }
+
+    {
+        //
+        // Signing steps
+        //
+        // random k
+        let proof_builder = CredentialProofBuilder::new(&params, &attributes, &blind);
+        // R = k G
+        let commitments = proof_builder.commitments(&verify_key, &blind_commit_hash);
+
+        // c = H(R || ...)
+        let mut hasher = ProofHasher::new();
+        commitments.commit(&mut hasher);
+        let challenge = hasher.finish();
+
+        // s = k + c x
+        let proof = proof_builder.finish(&challenge);
+
+        //
+        // Verify steps
+        //
+        // R = s G - c P
+        let verify_commitments = proof.commitments(&challenge,
+                                                   &verify_key, &blind_commit_hash,
+                                                   &kappa, &v);
+
+        // c = H(R || ...)
+        let mut verify_hasher = ProofHasher::new();
+        verify_commitments.commit(&mut verify_hasher);
+        let verify_challenge = verify_hasher.finish();
+        // c == c'
+        assert_eq!(challenge, verify_challenge);
+    }
 }
 
