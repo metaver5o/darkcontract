@@ -4,9 +4,9 @@ use bls12_381 as bls;
 
 use crate::bls_extensions::*;
 
-pub fn compute_polynomial<'a, I>(coefficients: I, x_primitive: u64)
-    -> bls::Scalar
-    where I: Iterator<Item=&'a bls::Scalar>
+pub fn compute_polynomial<'a, I>(coefficients: I, x_primitive: u64) -> bls::Scalar
+where
+    I: Iterator<Item = &'a bls::Scalar>,
 {
     let x = bls::Scalar::from(x_primitive);
     coefficients
@@ -15,11 +15,10 @@ pub fn compute_polynomial<'a, I>(coefficients: I, x_primitive: u64)
         .fold(bls::Scalar::zero(), |result, x| result + x)
 }
 
-pub fn lagrange_basis<I>(indexes: I)
-    -> Vec<bls::Scalar>
+pub fn lagrange_basis<I>(indexes: I) -> Vec<bls::Scalar>
 where
     I: Iterator + Clone,
-    I::Item: Borrow<u64>
+    I::Item: Borrow<u64>,
 {
     let x = bls::Scalar::zero();
     let mut lagrange_result = Vec::new();
@@ -59,5 +58,13 @@ pub fn compute_commit_hash(attribute_commit: &bls::G1Projective) -> bls::G1Proje
     let commit_data = bls::G1Affine::from(attribute_commit).to_compressed();
     let commit_hash = bls::G1Projective::hash_to_point(&commit_data);
     commit_hash
+}
+
+pub fn izip<A, B>(
+    first: impl IntoIterator<Item = A>,
+    second: impl IntoIterator<Item = B>,
+) -> impl Iterator<Item = (A, B)>
+{
+    first.into_iter().zip(second.into_iter())
 }
 

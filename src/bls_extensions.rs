@@ -1,6 +1,6 @@
 use bls12_381 as bls;
-use sha2::{Sha512, Digest};
-use rand_core::{RngCore, OsRng};
+use rand_core::{OsRng, RngCore};
+use sha2::{Digest, Sha512};
 
 // This code provides the ability to create a random scalar using a trait
 pub trait RngInstance {
@@ -27,7 +27,7 @@ impl RandomScalar for bls::Scalar {
             R::fill_bytes(&mut random_bytes);
             let scalar = bls::Scalar::from_bytes(&random_bytes);
             if scalar.is_some().unwrap_u8() == 1 {
-                break scalar.unwrap()
+                break scalar.unwrap();
             }
         }
     }
@@ -53,19 +53,18 @@ macro_rules! make_hash {
             let hash_result = hasher.result();
 
             let start = j * HASH_SIZE;
-            let end =
-                if start + HASH_SIZE > $array_size {
-                    $array_size
-                } else {
-                    start + HASH_SIZE
-                };
+            let end = if start + HASH_SIZE > $array_size {
+                $array_size
+            } else {
+                start + HASH_SIZE
+            };
             hash_data.copy_from_slice(&hash_result[start..end]);
 
             j += 1;
         }
 
         hash_data
-    }}
+    }};
 }
 
 pub trait HashableAffine {
@@ -100,7 +99,7 @@ pub trait HashableAffine {
 // Extend G1 point with a hash_to_point() method.
 impl HashableAffine for bls::G1Affine {
     fn hash_to_point(message: &[u8]) -> Self {
-        for i in 0u32 .. {
+        for i in 0u32.. {
             let hash = make_hash!(message, i, 48);
 
             let point = {
@@ -139,4 +138,3 @@ impl HashableProjective for bls::G1Projective {
         bls::G1Projective::from(bls::G1Affine::hash_to_point(&message))
     }
 }
-

@@ -1,0 +1,21 @@
+attr: 0x000000000000000000000000000000000000000000000000000000000000006e
+attr: 0x0000000000000000000000000000000000000000000000000000000000000004
+attr keys: 0x3fe9eb274eb53262e5f24b95ecf177fb01eea04346f256d02e5cf4337b0337ec
+attr keys: 0x59b249656365574c0bc8fc4f1440ce5a63934e6ccdcb9212124d37c97c9a88e2
+blinding factor: 0x5a12e2eb1cd8b42901ad58647c48fcc5f5de91f6b1c79fee36d108f7cd8f48bd
+gamma: [b6 df 9e 19 bd ca 01 b9 67 e4 f6 ff 1d 07 53 3a 50 48 7a 71 23 a1 06 d3 d8 a1 29 43 ee be 24 58 9b 93 d7 0b c6 dc 24 aa 56 56 7d 49 d6 6f 31 3e]
+attribute_commit: [97 95 ba 53 e8 bf 83 bd f3 23 c6 c9 17 4a 41 ad f5 04 df 3e 49 11 76 74 ac cb 24 e6 c5 1a 3e fc 1f 24 43 0c ce 82 6e 78 c8 65 fc 7e fc 45 f4 fb]
+commit_hash: [83 e8 9d 58 b1 54 48 fa d4 59 6e 88 42 c7 19 d4 65 a8 53 ec 87 fe f5 c3 dc 4e 13 aa 5d b0 3e a6 0a 1f 22 ea 65 aa d2 c5 55 ed 37 da 44 41 55 93]
+ciphertext 0: [96 bb 5f e1 01 c9 69 97 3f b1 74 41 ae 98 cb 99 8e 70 50 8d 32 29 91 5e aa b3 ba d6 3a a4 96 49 f4 63 aa 0d 20 60 38 27 76 6d 4b 4a fc cd 8a 3c]
+ciphertext 1: [b9 ae 56 13 d9 bc 2d b1 eb 82 4d 91 99 dc 27 33 ae 68 87 2c 8a fc ed be 9c 2f 37 19 6a b3 f9 05 8d 57 c9 08 79 51 f9 5e 2d ae 7d 46 90 e6 ac 42]
+ciphertext 0: [8d 66 78 da 17 cc 6f a1 96 a7 7f 6d 0f 29 5f 01 34 14 ec 38 f2 81 c6 ea 0d 83 e6 b8 40 63 07 f2 9a 6f 24 66 5f 22 5f b4 a3 0c ae 09 29 a4 dd 45]
+ciphertext 1: [96 fd fe f3 56 86 6f a3 82 7a 90 9f 76 a8 f2 13 27 b7 4a b3 d7 32 c7 b8 bb f6 7a 29 f6 23 c8 fa 3d 93 05 05 c8 74 7b 75 74 a9 4e 7b 03 49 5c bc]
+test coconut::test_multiparty_keygen ... ok
+blind_commit_hash: [80 81 c6 fb 9b 59 80 d6 f7 bf 51 b9 ff 76 02 44 6e ed d2 23 74 f5 11 5e 39 09 fc 95 09 25 1d 0c dd 2a b1 8d 68 18 60 1e 8f 85 94 12 af 01 80 24]
+blind: 0x39d5cf461d3c15b4cb4507fa98fdb8ca85a69de1adbe3e07b8bab3660d05cf2e
+alpha: [ad 30 c8 e1 d4 5b 3a 3e a3 c3 f0 82 3f 30 0d ac 51 8d 3b 10 b3 3e 8b df 9b 80 6d 4d 8b e9 97 69 42 ee 67 dd 27 19 82 d7 93 49 36 6a 26 21 ae bc 16 dc 38 7f b0 27 fa 48 67 6a 7a ff 9f ed f9 db 02 6e 3f 4a 9a 93 99 0d fe 07 d0 72 56 bd d2 38 1c f4 b2 54 b3 a1 72 a1 90 16 81 31 b0 f5 be ac]
+beta: [aa 9d b9 d8 7a 33 07 b2 b7 44 d9 a8 16 86 f3 60 1b e3 fe 08 85 c1 6b 0a ea f2 0a ee af 46 c5 39 6e 06 1e 05 34 2a ea 41 a1 af ea ff 46 0d a8 7c 04 a1 bd 26 40 50 59 1e de 1d 13 fc 13 79 9f 8c 31 86 ef 09 0e 24 01 b3 69 2b ef 94 13 ec e9 21 b8 70 9a 54 71 c8 0f 51 24 95 af fb 49 08 a0 fa]
+beta: [ae bd 93 0e 7c 57 44 f2 12 fd 3c 60 c5 08 a5 13 7d 92 2b 4c 37 3c 99 9f 33 ad 49 50 62 45 d8 6d 02 41 14 2d 34 4c a5 6d 1e 67 61 7c 74 68 92 fd 09 db ba dd 77 80 89 f6 b1 70 16 59 c5 7a 92 ca a3 91 d3 b4 92 cf b5 97 80 a2 5b 18 18 04 be 24 57 f6 0a 44 54 a3 57 36 49 44 3f 0f d3 7c 79 14]
+kappa: [89 59 75 07 43 5d 40 f9 34 7f 2c 03 d3 05 d6 98 d1 e3 4d d8 cb 1b 7d 97 46 35 eb 86 fe 4c 2b 2a 49 50 d9 50 5f 07 d2 7f d3 10 66 2d 48 eb 77 e3 18 91 bb e6 d4 e8 52 44 02 eb f1 88 9a 46 1d 80 90 73 4d a2 28 a1 ac 71 12 3b 42 38 ea c7 ae 24 db 03 13 89 9b 6b cb 45 e4 3e 12 8c f2 a5 3c da]
+v: [94 c1 76 fb 7a ef 48 63 50 e5 80 a3 dd 80 4d 60 59 2d 78 7e 44 7d 18 83 ee 30 40 1f 46 03 61 0d 90 a8 e5 32 0a e6 3c 97 27 2f d1 a3 a9 09 31 bd]
+

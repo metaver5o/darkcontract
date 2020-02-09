@@ -4,4 +4,3 @@ pub mod elgamal;
 pub mod parameters;
 pub mod proofs;
 pub mod utility;
-
