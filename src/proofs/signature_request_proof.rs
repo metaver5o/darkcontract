@@ -1,0 +1,182 @@
+use bls12_381 as bls;
+use itertools::izip;
+
+use crate::bls_extensions::*;
+use crate::elgamal::*;
+use crate::parameters::*;
+use crate::proofs::proof::*;
+
+pub struct SignatureRequestProofBuilder<'a, R: RngInstance> {
+    params: &'a Parameters<R>,
+
+    // Secrets
+    attributes: &'a Vec<bls::Scalar>,
+    attribute_keys: &'a Vec<bls::Scalar>,
+    blinding_factor: &'a bls::Scalar,
+
+    // Witnesses
+    witness_blind: bls::Scalar,
+    witness_attributes: Vec<bls::Scalar>,
+    witness_keys: Vec<bls::Scalar>,
+}
+
+pub struct SignatureRequestProofCommitments<'a, R: RngInstance> {
+    // Base points
+    params: &'a Parameters<R>,
+    gamma: &'a ElGamalPublicKey<'a, R>,
+    commit_hash: &'a bls::G1Projective,
+
+    // This value is hashed in the challenge in coconut ref impl. We do the same here.
+    attribute_commit: &'a bls::G1Projective,
+
+    // Commitments
+    commit_attributes: bls::G1Projective,
+    commit_keys: Vec<(bls::G1Projective, bls::G1Projective)>,
+}
+
+pub struct SignatureRequestProof<'a, R: RngInstance> {
+    params: &'a Parameters<R>,
+
+    // Responses
+    response_blind: bls::Scalar,
+    response_attributes: Vec<bls::Scalar>,
+    response_keys: Vec<bls::Scalar>,
+}
+
+impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
+    pub fn new(
+        params: &'a Parameters<R>,
+        attributes: &'a Vec<bls::Scalar>,
+        attribute_keys: &'a Vec<bls::Scalar>,
+        blinding_factor: &'a bls::Scalar,
+    ) -> Self {
+        Self {
+            params,
+
+            attributes,
+            attribute_keys,
+            blinding_factor,
+
+            witness_blind: params.random_scalar(),
+            witness_attributes: params.random_scalars(attributes.len()),
+            witness_keys: params.random_scalars(attribute_keys.len()),
+        }
+    }
+
+    pub fn commitments(
+        &self,
+        gamma: &'a ElGamalPublicKey<'a, R>,
+        commit_hash: &'a bls::G1Projective,
+        attribute_commit: &'a bls::G1Projective,
+    ) -> SignatureRequestProofCommitments<'a, R> {
+        assert_eq!(self.witness_attributes.len(), self.params.hs.len());
+
+        // w_o G_1 + sum(w_m H_j)
+        let mut commit_attributes = self.params.g1 * self.witness_blind;
+        for (h, witness) in izip!(&self.params.hs, &self.witness_attributes) {
+            commit_attributes += h * witness;
+        }
+
+        SignatureRequestProofCommitments {
+            params: self.params,
+            gamma,
+            commit_hash,
+            attribute_commit,
+
+            commit_attributes,
+
+            commit_keys: izip!(&self.witness_attributes, &self.witness_keys)
+                .map(|(witness_attribute, witness_key)| {
+                    (
+                        // w_k_j G_1
+                        self.params.g1 * witness_key,
+                        // w_m_j h + w_k_j Y
+                        commit_hash * witness_attribute + gamma.public_key * witness_key,
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    pub fn finish(&self, challenge: &bls::Scalar) -> SignatureRequestProof<'a, R> {
+        assert_eq!(self.witness_attributes.len(), self.attributes.len());
+        assert_eq!(self.witness_keys.len(), self.attribute_keys.len());
+
+        SignatureRequestProof {
+            params: self.params,
+
+            response_blind: self.witness_blind - challenge * self.blinding_factor,
+
+            response_attributes: izip!(self.attributes, &self.witness_attributes)
+                .map(|(attribute, witness)| witness - challenge * attribute)
+                .collect(),
+
+            response_keys: izip!(self.attribute_keys, &self.witness_keys)
+                .map(|(key, witness)| witness - challenge * key)
+                .collect(),
+        }
+    }
+}
+
+impl<'a, R: RngInstance> SignatureRequestProofCommitments<'a, R> {
+    pub fn commit(&self, hasher: &mut ProofHasher) {
+        // Add base points we use
+        hasher.add_g1_affine(&self.params.g1);
+        hasher.add_g2_affine(&self.params.g2);
+        for h in &self.params.hs {
+            hasher.add_g1_affine(h);
+        }
+        hasher.add_g1(&self.gamma.public_key);
+        hasher.add_g1(self.commit_hash);
+        hasher.add_g1(self.attribute_commit);
+
+        hasher.add_g1(&self.commit_attributes);
+
+        for (commit_a, commit_b) in &self.commit_keys {
+            hasher.add_g1(&commit_a);
+            hasher.add_g1(&commit_b);
+        }
+    }
+}
+
+impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
+    pub fn commitments(
+        &self,
+        challenge: &bls::Scalar,
+        gamma: &'a ElGamalPublicKey<'a, R>,
+        commit_hash: &'a bls::G1Projective,
+        attribute_commit: &'a bls::G1Projective,
+        ciphertexts: &Vec<EncryptedValue>,
+    ) -> SignatureRequestProofCommitments<R> {
+
+        // c c_m + r_r G_1 + sum(r_m H)
+        let mut commit_attributes = attribute_commit * challenge
+            + self.params.g1 * self.response_blind;
+        for (h, response) in izip!(&self.params.hs, &self.response_attributes) {
+            commit_attributes += h * response;
+        }
+
+        SignatureRequestProofCommitments {
+            params: self.params,
+
+            gamma,
+            commit_hash,
+            attribute_commit,
+
+            commit_attributes,
+
+            commit_keys: izip!(&self.response_attributes, &self.response_keys, ciphertexts)
+                .map(|(response_attribute, response_key, ciphertext)| {
+                    (
+                        // c A_i + r_k_i G1
+                        ciphertext.0 * challenge + self.params.g1 * response_key,
+                        // c B_i + r_k_i Y + r_m_i h
+                        ciphertext.1 * challenge + gamma.public_key * response_key
+                            + commit_hash * response_attribute
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+

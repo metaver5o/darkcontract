@@ -3,7 +3,7 @@ use bls12_381 as bls;
 use crate::bls_extensions::*;
 use crate::elgamal::*;
 use crate::parameters::*;
-use crate::proofs::*;
+use crate::old_proofs::*;
 use crate::utility::*;
 
 pub struct SecretKey {
