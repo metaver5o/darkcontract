@@ -63,8 +63,6 @@ pub fn compute_commit_hash(attribute_commit: &bls::G1Projective) -> bls::G1Proje
 pub fn izip<A, B>(
     first: impl IntoIterator<Item = A>,
     second: impl IntoIterator<Item = B>,
-) -> impl Iterator<Item = (A, B)>
-{
+) -> impl Iterator<Item = (A, B)> {
     first.into_iter().zip(second.into_iter())
 }
-

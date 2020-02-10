@@ -3,14 +3,14 @@ use sha2::{Digest, Sha256};
 
 pub struct ProofHasher {
     g1_datas: Vec<[u8; 48]>,
-    g2_datas: Vec<[u8; 96]>
+    g2_datas: Vec<[u8; 96]>,
 }
 
 impl ProofHasher {
     pub fn new() -> Self {
         Self {
             g1_datas: Vec::new(),
-            g2_datas: Vec::new()
+            g2_datas: Vec::new(),
         }
     }
 
@@ -69,17 +69,18 @@ trait ProofBuilder {
     fn finish(&self, challenge: &bls::Scalar);
 }
 
-trait Proof {
-    fn verify(&self) -> bool;
+trait ProofCommitments {
+    fn commit(&self, hasher: &mut ProofHasher);
 }
 
-pub struct ProofAssembly<'a> {
-    proofs: Vec<&'a dyn Proof>,
+pub struct ProofAssembly {
+    builders: Vec<Box<dyn ProofBuilder>>,
+    commits: Vec<Box<dyn ProofCommitments>>,
 }
 
-impl<'a> ProofAssembly<'a> {
-    fn add(&mut self, prover: &'a dyn Proof) {
-        self.proofs.push(prover);
+impl ProofAssembly {
+    fn add(&mut self, builder: Box<dyn ProofBuilder>, commit: Box<dyn ProofCommitments>) {
+        self.builders.push(builder);
+        self.commits.push(commit);
     }
 }
-

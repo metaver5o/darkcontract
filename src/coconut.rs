@@ -2,8 +2,8 @@ use bls12_381 as bls;
 
 use crate::bls_extensions::*;
 use crate::elgamal::*;
-use crate::parameters::*;
 use crate::old_proofs::*;
+use crate::parameters::*;
 use crate::utility::*;
 
 pub struct SecretKey {
@@ -357,7 +357,11 @@ fn test_multiparty_coconut() {
 
     let blind_signatures: Vec<_> = secret_keys
         .iter()
-        .map(|secret_key| coconut.blind_sign(secret_key, &gamma, &sign_request).unwrap())
+        .map(|secret_key| {
+            coconut
+                .blind_sign(secret_key, &gamma, &sign_request)
+                .unwrap()
+        })
         .collect();
 
     // Signatures should be a struct, with an authority ID inside them

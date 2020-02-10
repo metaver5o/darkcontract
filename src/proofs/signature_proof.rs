@@ -148,10 +148,9 @@ impl<'a, R: RngInstance> SignatureProof<'a, R> {
         attribute_commit: &'a bls::G1Projective,
         ciphertexts: &Vec<EncryptedValue>,
     ) -> SignatureProofCommitments<R> {
-
         // c c_m + r_r G_1 + sum(r_m H)
-        let mut commit_attributes = attribute_commit * challenge
-            + self.params.g1 * self.response_blind;
+        let mut commit_attributes =
+            attribute_commit * challenge + self.params.g1 * self.response_blind;
         for (h, response) in izip!(&self.params.hs, &self.response_attributes) {
             commit_attributes += h * response;
         }
@@ -171,12 +170,12 @@ impl<'a, R: RngInstance> SignatureProof<'a, R> {
                         // c A_i + r_k_i G1
                         ciphertext.0 * challenge + self.params.g1 * response_key,
                         // c B_i + r_k_i Y + r_m_i h
-                        ciphertext.1 * challenge + gamma.public_key * response_key
-                            + commit_hash * response_attribute
+                        ciphertext.1 * challenge
+                            + gamma.public_key * response_key
+                            + commit_hash * response_attribute,
                     )
                 })
                 .collect(),
         }
     }
 }
-

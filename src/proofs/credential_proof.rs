@@ -26,14 +26,14 @@ pub struct CredentialProofCommitments<'a, R: RngInstance> {
 
     // Commitments
     commit_kappa: bls::G2Projective,
-    commit_blind: bls::G1Projective
+    commit_blind: bls::G1Projective,
 }
 
 pub struct CredentialProof<'a, R: RngInstance> {
     params: &'a Parameters<R>,
 
     response_kappa: Vec<bls::Scalar>,
-    response_blind: bls::Scalar
+    response_blind: bls::Scalar,
 }
 
 impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
@@ -49,11 +49,11 @@ impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
             blind,
 
             witness_kappa: params.random_scalars(attributes.len()),
-            witness_blind: params.random_scalar()
+            witness_blind: params.random_scalar(),
         }
     }
 
-    pub fn commitments (
+    pub fn commitments(
         &self,
         verify_key: &'a VerifyKey,
         blind_commit_hash: &'a bls::G1Projective,
@@ -65,8 +65,10 @@ impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
             verify_key,
             blind_commit_hash,
 
-            commit_kappa: self.params.g2 * self.witness_blind + verify_key.alpha
-                + self.witness_kappa
+            commit_kappa: self.params.g2 * self.witness_blind
+                + verify_key.alpha
+                + self
+                    .witness_kappa
                     .iter()
                     .zip(verify_key.beta.iter())
                     .map(|(witness, beta_i)| beta_i * witness)
@@ -118,9 +120,9 @@ impl<'a, R: RngInstance> CredentialProof<'a, R> {
         kappa: &bls::G2Projective,
         v: &bls::G1Projective,
     ) -> CredentialProofCommitments<R> {
-
         // c K + r_t G2 + (1 - c) A + sum(r_m_i B_i)
-        let mut commit_kappa = kappa * challenge + self.params.g2 * self.response_blind
+        let mut commit_kappa = kappa * challenge
+            + self.params.g2 * self.response_blind
             + verify_key.alpha * (bls::Scalar::one() - challenge);
         for (beta_i, response) in izip!(&verify_key.beta, &self.response_kappa) {
             commit_kappa += beta_i * response;
@@ -133,8 +135,7 @@ impl<'a, R: RngInstance> CredentialProof<'a, R> {
 
             commit_kappa,
 
-            commit_blind: v * challenge + blind_commit_hash * self.response_blind
+            commit_blind: v * challenge + blind_commit_hash * self.response_blind,
         }
     }
 }
-
