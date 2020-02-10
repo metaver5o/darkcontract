@@ -6,7 +6,7 @@ use crate::elgamal::*;
 use crate::parameters::*;
 use crate::proofs::credential_proof::*;
 use crate::proofs::proof::*;
-use crate::proofs::signature_request_proof::*;
+use crate::proofs::signature_proof::*;
 
 struct TestValues<'a, R: RngInstance> {
     attributes: Vec<bls::Scalar>,
@@ -231,9 +231,9 @@ fn test_signature_request_proof() {
     // Signing steps
     //
     // random k
-    let proof_builder = SignatureRequestProofBuilder::new(&params, &values.attributes,
-                                                          &values.attribute_keys,
-                                                          &values.blinding_factor);
+    let proof_builder = SignatureProofBuilder::new(&params, &values.attributes,
+                                                   &values.attribute_keys,
+                                                   &values.blinding_factor);
     // R = k G
     let commitments = proof_builder.commitments(&values.gamma, &values.commit_hash,
                                                 &values.attribute_commit);

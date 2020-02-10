@@ -65,9 +65,7 @@ impl ProofHasher {
     }
 }
 
-trait Prover {
-    fn commit(&self, hasher: &mut Sha256);
-
+trait ProofBuilder {
     fn finish(&self, challenge: &bls::Scalar);
 }
 
@@ -76,11 +74,11 @@ trait Proof {
 }
 
 pub struct ProofAssembly<'a> {
-    proofs: Vec<&'a dyn Prover>,
+    proofs: Vec<&'a dyn Proof>,
 }
 
 impl<'a> ProofAssembly<'a> {
-    fn add(&mut self, prover: &'a dyn Prover) {
+    fn add(&mut self, prover: &'a dyn Proof) {
         self.proofs.push(prover);
     }
 }

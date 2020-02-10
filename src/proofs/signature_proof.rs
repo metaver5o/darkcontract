@@ -6,7 +6,7 @@ use crate::elgamal::*;
 use crate::parameters::*;
 use crate::proofs::proof::*;
 
-pub struct SignatureRequestProofBuilder<'a, R: RngInstance> {
+pub struct SignatureProofBuilder<'a, R: RngInstance> {
     params: &'a Parameters<R>,
 
     // Secrets
@@ -20,7 +20,7 @@ pub struct SignatureRequestProofBuilder<'a, R: RngInstance> {
     witness_keys: Vec<bls::Scalar>,
 }
 
-pub struct SignatureRequestProofCommitments<'a, R: RngInstance> {
+pub struct SignatureProofCommitments<'a, R: RngInstance> {
     // Base points
     params: &'a Parameters<R>,
     gamma: &'a ElGamalPublicKey<'a, R>,
@@ -34,7 +34,7 @@ pub struct SignatureRequestProofCommitments<'a, R: RngInstance> {
     commit_keys: Vec<(bls::G1Projective, bls::G1Projective)>,
 }
 
-pub struct SignatureRequestProof<'a, R: RngInstance> {
+pub struct SignatureProof<'a, R: RngInstance> {
     params: &'a Parameters<R>,
 
     // Responses
@@ -43,7 +43,7 @@ pub struct SignatureRequestProof<'a, R: RngInstance> {
     response_keys: Vec<bls::Scalar>,
 }
 
-impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
+impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
     pub fn new(
         params: &'a Parameters<R>,
         attributes: &'a Vec<bls::Scalar>,
@@ -68,7 +68,7 @@ impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
         gamma: &'a ElGamalPublicKey<'a, R>,
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
-    ) -> SignatureRequestProofCommitments<'a, R> {
+    ) -> SignatureProofCommitments<'a, R> {
         assert_eq!(self.witness_attributes.len(), self.params.hs.len());
 
         // w_o G_1 + sum(w_m H_j)
@@ -77,7 +77,7 @@ impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
             commit_attributes += h * witness;
         }
 
-        SignatureRequestProofCommitments {
+        SignatureProofCommitments {
             params: self.params,
             gamma,
             commit_hash,
@@ -98,11 +98,11 @@ impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
         }
     }
 
-    pub fn finish(&self, challenge: &bls::Scalar) -> SignatureRequestProof<'a, R> {
+    pub fn finish(&self, challenge: &bls::Scalar) -> SignatureProof<'a, R> {
         assert_eq!(self.witness_attributes.len(), self.attributes.len());
         assert_eq!(self.witness_keys.len(), self.attribute_keys.len());
 
-        SignatureRequestProof {
+        SignatureProof {
             params: self.params,
 
             response_blind: self.witness_blind - challenge * self.blinding_factor,
@@ -118,7 +118,7 @@ impl<'a, R: RngInstance> SignatureRequestProofBuilder<'a, R> {
     }
 }
 
-impl<'a, R: RngInstance> SignatureRequestProofCommitments<'a, R> {
+impl<'a, R: RngInstance> SignatureProofCommitments<'a, R> {
     pub fn commit(&self, hasher: &mut ProofHasher) {
         // Add base points we use
         hasher.add_g1_affine(&self.params.g1);
@@ -139,7 +139,7 @@ impl<'a, R: RngInstance> SignatureRequestProofCommitments<'a, R> {
     }
 }
 
-impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
+impl<'a, R: RngInstance> SignatureProof<'a, R> {
     pub fn commitments(
         &self,
         challenge: &bls::Scalar,
@@ -147,7 +147,7 @@ impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
         ciphertexts: &Vec<EncryptedValue>,
-    ) -> SignatureRequestProofCommitments<R> {
+    ) -> SignatureProofCommitments<R> {
 
         // c c_m + r_r G_1 + sum(r_m H)
         let mut commit_attributes = attribute_commit * challenge
@@ -156,7 +156,7 @@ impl<'a, R: RngInstance> SignatureRequestProof<'a, R> {
             commit_attributes += h * response;
         }
 
-        SignatureRequestProofCommitments {
+        SignatureProofCommitments {
             params: self.params,
 
             gamma,

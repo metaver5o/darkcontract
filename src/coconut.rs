@@ -148,6 +148,22 @@ impl<R: RngInstance> Coconut<R> {
             .map(|(attribute, key)| shared_attribute_key.encrypt(&attribute, &key, &commit_hash))
             .collect();
 
+        /*
+        // Witness
+        let proof_builder = SignatureProofBuilder::new(&params, &attributes,
+                                                       &attribute_keys,
+                                                       &blinding_factor);
+        // Commits
+        let commitments = proof_builder.commitments(shared_attribute_key, &commit_hash,
+                                                    &attribute_commit);
+        // Challenge
+        let mut hasher = ProofHasher::new();
+        commitments.commit(&mut hasher);
+        let challenge = hasher.finish();
+        //Responses
+        let proof = proof_builder.finish(&challenge);
+        */
+
         let signer_proof = make_signer_proof(
             &self.params,
             shared_attribute_key,
