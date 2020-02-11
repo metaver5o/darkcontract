@@ -2,7 +2,7 @@ use bls12_381 as bls;
 use itertools::izip;
 
 use crate::bls_extensions::*;
-use crate::coconut::*;
+use crate::coconut::coconut::*;
 use crate::parameters::*;
 use crate::proofs::proof::*;
 

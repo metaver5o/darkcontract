@@ -9,8 +9,8 @@ use crate::proofs::signature_proof::*;
 use crate::utility::*;
 
 pub struct SecretKey {
-    x: bls::Scalar,
-    y: Vec<bls::Scalar>,
+    pub x: bls::Scalar,
+    pub y: Vec<bls::Scalar>,
 }
 
 pub struct VerifyKey {
@@ -43,7 +43,7 @@ impl BlindSignatureRequest {
         let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = self
             .encrypted_attributes
             .iter()
-            .map(|&(ref a, ref b)| (a, b))
+            .map(|value| (&value.0, &value.1))
             .unzip();
 
         // Issue signature
@@ -87,14 +87,26 @@ impl BlindSignatureRequest {
                 .map(|(y_j, b)| *b * y_j)
                 .sum::<bls::G1Projective>();
 
-        Ok((signature_a, signature_b))
+        Ok(PartialSignature { encrypted_value: (signature_a, signature_b) })
     }
 }
 
-type PartialSignature = EncryptedValue;
 type SignatureShare = bls::G1Projective;
 type CombinedSignatureShares = bls::G1Projective;
 type Signature = (bls::G1Projective, bls::G1Projective);
+
+pub struct PartialSignature {
+    encrypted_value: EncryptedValue
+}
+
+impl PartialSignature {
+    pub fn unblind<R: RngInstance>(
+        &self,
+        private_key: &ElGamalPrivateKey<R>,
+    ) -> SignatureShare {
+        private_key.decrypt(&self.encrypted_value)
+    }
+}
 
 pub struct SignatureX {
     commit_hash: bls::G1Projective,
@@ -111,7 +123,7 @@ pub struct Credential {
 }
 
 pub struct Coconut<R: RngInstance> {
-    params: Parameters<R>,
+    pub params: Parameters<R>,
     threshold: u32,
     authorities_total: u32,
 }
@@ -174,7 +186,7 @@ impl<R: RngInstance> Coconut<R> {
 
         let (alpha, beta): (Vec<&_>, Vec<&Vec<_>>) = verify_keys
             .iter()
-            .map(|ref key| (&key.alpha, &key.beta))
+            .map(|key| (&key.alpha, &key.beta))
             .unzip();
 
         assert!(beta.len() > 0);
@@ -252,14 +264,6 @@ impl<R: RngInstance> Coconut<R> {
             challenge,
             proof,
         }
-    }
-
-    pub fn unblind(
-        &self,
-        private_key: &ElGamalPrivateKey<R>,
-        encrypted_value: &EncryptedValue,
-    ) -> SignatureShare {
-        private_key.decrypt(encrypted_value)
     }
 
     pub fn aggregate(
@@ -366,80 +370,3 @@ impl Credential {
     }
 }
 
-//extern crate hex_slice;
-//use hex_slice::AsHex;
-
-#[test]
-fn test_multiparty_keygen() {
-    let attributes_size = 2;
-    let (threshold, number_authorities) = (5, 7);
-
-    let coconut = Coconut::<OsRngInstance>::new(attributes_size, threshold, number_authorities);
-
-    let (secret_keys, verify_keys) = coconut.multiparty_keygen();
-
-    let verify_key = coconut.aggregate_keys(&verify_keys);
-
-    let sigs_x: Vec<bls::G1Projective> = secret_keys
-        .iter()
-        .map(|secret_key| coconut.params.g1 * secret_key.x)
-        .collect();
-    let l = lagrange_basis_from_range(6);
-    let sig = &l
-        .iter()
-        .zip(sigs_x.iter())
-        .map(|(l_i, s_i)| s_i * l_i)
-        .sum();
-
-    let ppair_1 = bls::pairing(&bls::G1Affine::from(sig), &coconut.params.g2);
-    let ppair_2 = bls::pairing(&coconut.params.g1, &bls::G2Affine::from(verify_key.alpha));
-    assert_eq!(ppair_1, ppair_2);
-}
-
-#[test]
-fn test_multiparty_coconut() {
-    let attributes_size = 2;
-    let (threshold, number_authorities) = (5, 7);
-
-    let coconut = Coconut::<OsRngInstance>::new(attributes_size, threshold, number_authorities);
-
-    let (secret_keys, verify_keys) = coconut.multiparty_keygen();
-
-    let verify_key = coconut.aggregate_keys(&verify_keys);
-
-    let d = ElGamalPrivateKey::new(&coconut.params);
-    let gamma = d.to_public();
-
-    let attributes = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
-
-    let sign_request = coconut.make_blind_sign_request(&gamma, &attributes, Vec::new());
-
-    let blind_signatures: Vec<_> = secret_keys
-        .iter()
-        .map(|secret_key| {
-            sign_request
-                .blind_sign(&coconut.params, secret_key, &gamma, Vec::new())
-                .unwrap()
-        })
-        .collect();
-
-    // Signatures should be a struct, with an authority ID inside them
-    let mut signature_shares: Vec<_> = blind_signatures
-        .iter()
-        .map(|blind_signature| coconut.unblind(&d, blind_signature))
-        .collect();
-    let mut indexes: Vec<u64> = (1u64..=signature_shares.len() as u64).collect();
-
-    signature_shares.remove(0);
-    indexes.remove(0);
-    signature_shares.remove(4);
-    indexes.remove(4);
-
-    let commit_hash = compute_commit_hash(&sign_request.attribute_commit);
-    let signature = (commit_hash, coconut.aggregate(&signature_shares, indexes));
-
-    let credential = coconut.make_credential(&verify_key, &signature, &attributes, Vec::new());
-
-    let is_verify = credential.verify(&coconut.params, &verify_key, Vec::new());
-    assert!(is_verify);
-}

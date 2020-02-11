@@ -1,7 +1,7 @@
 use bls12_381 as bls;
 
 use crate::bls_extensions::*;
-use crate::coconut::*;
+use crate::coconut::coconut::*;
 use crate::elgamal::*;
 use crate::parameters::*;
 #[allow(unused_imports)]
