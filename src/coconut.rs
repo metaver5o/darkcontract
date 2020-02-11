@@ -2,7 +2,6 @@ use bls12_381 as bls;
 
 use crate::bls_extensions::*;
 use crate::elgamal::*;
-use crate::old_proofs::*;
 use crate::parameters::*;
 use crate::proofs::credential_proof::*;
 use crate::proofs::proof::*;
