@@ -31,9 +31,67 @@ impl BlindSignatureRequest {
     pub fn compute_commit_hash(&self) -> bls::G1Projective {
         compute_commit_hash(&self.attribute_commit)
     }
+
+    pub fn blind_sign<R: RngInstance>(
+        &self,
+        params: &Parameters<R>,
+        secret_key: &SecretKey,
+        shared_attribute_key: &ElGamalPublicKey<R>,
+        external_commitments: Vec<Box<dyn ProofCommitments>>,
+    ) -> Result<PartialSignature, &'static str> {
+        assert_eq!(self.encrypted_attributes.len(), params.hs.len());
+        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = self
+            .encrypted_attributes
+            .iter()
+            .map(|&(ref a, ref b)| (a, b))
+            .unzip();
+
+        // Issue signature
+        let commit_hash = self.compute_commit_hash();
+
+        // Verify proof
+        let commitments = self.proof.commitments(
+            params,
+            &self.challenge,
+            shared_attribute_key,
+            &commit_hash,
+            &self.attribute_commit,
+            &self.encrypted_attributes,
+        );
+        let mut proof_assembly = ProofAssembly::new();
+        proof_assembly.add(commitments);
+        for commit in external_commitments {
+            proof_assembly.add(commit);
+        }
+
+        // Challenge
+        let challenge = proof_assembly.compute_challenge();
+
+        if challenge != self.challenge {
+            return Err("verify proof failed");
+        }
+
+        // TODO: Add public attributes - need to see about selective reveal
+        let signature_a = secret_key
+            .y
+            .iter()
+            .zip(a_factors.iter())
+            .map(|(y_j, a)| *a * y_j)
+            .sum();
+
+        let signature_b = commit_hash * secret_key.x
+            + secret_key
+                .y
+                .iter()
+                .zip(b_factors.iter())
+                .map(|(y_j, b)| *b * y_j)
+                .sum::<bls::G1Projective>();
+
+        Ok((signature_a, signature_b))
+    }
 }
 
-type PartialSignature = (bls::G1Projective, bls::G1Projective);
+type PartialSignature = EncryptedValue;
 type SignatureShare = bls::G1Projective;
 type CombinedSignatureShares = bls::G1Projective;
 type Signature = (bls::G1Projective, bls::G1Projective);
@@ -196,64 +254,6 @@ impl<R: RngInstance> Coconut<R> {
         }
     }
 
-    pub fn blind_sign(
-        &self,
-        secret_key: &SecretKey,
-        shared_attribute_key: &ElGamalPublicKey<R>,
-        request: &BlindSignatureRequest,
-        external_commitments: Vec<Box<dyn ProofCommitments>>,
-    ) -> Result<PartialSignature, &'static str> {
-        assert_eq!(request.encrypted_attributes.len(), self.params.hs.len());
-        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = request
-            .encrypted_attributes
-            .iter()
-            .map(|&(ref a, ref b)| (a, b))
-            .unzip();
-
-        // Issue signature
-        let commit_hash = request.compute_commit_hash();
-
-        // Verify proof
-        let commitments = request.proof.commitments(
-            &self.params,
-            &request.challenge,
-            shared_attribute_key,
-            &commit_hash,
-            &request.attribute_commit,
-            &request.encrypted_attributes,
-        );
-        let mut proof_assembly = ProofAssembly::new();
-        proof_assembly.add(commitments);
-        for commit in external_commitments {
-            proof_assembly.add(commit);
-        }
-
-        // Challenge
-        let challenge = proof_assembly.compute_challenge();
-
-        if challenge != request.challenge {
-            return Err("verify proof failed");
-        }
-
-        // TODO: Add public attributes - need to see about selective reveal
-        let signature_a = secret_key
-            .y
-            .iter()
-            .zip(a_factors.iter())
-            .map(|(y_j, a)| *a * y_j)
-            .sum();
-
-        let signature_b = commit_hash * secret_key.x
-            + secret_key
-                .y
-                .iter()
-                .zip(b_factors.iter())
-                .map(|(y_j, b)| *b * y_j)
-                .sum::<bls::G1Projective>();
-
-        Ok((signature_a, signature_b))
-    }
-
     pub fn unblind(
         &self,
         private_key: &ElGamalPrivateKey<R>,
@@ -328,20 +328,22 @@ impl<R: RngInstance> Coconut<R> {
             proof,
         }
     }
+}
 
-    pub fn verify_credential(
+impl Credential {
+    pub fn verify<R: RngInstance>(
         &self,
+        params: &Parameters<R>,
         verify_key: &VerifyKey,
-        credential: &Credential,
         external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> bool {
-        let commitments = credential.proof.commitments(
-            &self.params,
-            &credential.challenge,
+        let commitments = self.proof.commitments(
+            params,
+            &self.challenge,
             verify_key,
-            &credential.blind_commit_hash,
-            &credential.kappa,
-            &credential.v,
+            &self.blind_commit_hash,
+            &self.kappa,
+            &self.v,
         );
 
         let mut proof_assembly = ProofAssembly::new();
@@ -353,14 +355,14 @@ impl<R: RngInstance> Coconut<R> {
         // Challenge
         let challenge = proof_assembly.compute_challenge();
 
-        if challenge != credential.challenge {
+        if challenge != self.challenge {
             return false;
         }
 
-        let kappa = bls::G2Affine::from(credential.kappa);
-        let blind_commit = bls::G1Affine::from(credential.blind_commit_hash);
-        let sigma_nu = bls::G1Affine::from(credential.blind_sigma + credential.v);
-        bls::pairing(&blind_commit, &kappa) == bls::pairing(&sigma_nu, &self.params.g2)
+        let kappa = bls::G2Affine::from(self.kappa);
+        let blind_commit = bls::G1Affine::from(self.blind_commit_hash);
+        let sigma_nu = bls::G1Affine::from(self.blind_sigma + self.v);
+        bls::pairing(&blind_commit, &kappa) == bls::pairing(&sigma_nu, &params.g2)
     }
 }
 
@@ -415,8 +417,8 @@ fn test_multiparty_coconut() {
     let blind_signatures: Vec<_> = secret_keys
         .iter()
         .map(|secret_key| {
-            coconut
-                .blind_sign(secret_key, &gamma, &sign_request, Vec::new())
+            sign_request
+                .blind_sign(&coconut.params, secret_key, &gamma, Vec::new())
                 .unwrap()
         })
         .collect();
@@ -436,9 +438,8 @@ fn test_multiparty_coconut() {
     let commit_hash = compute_commit_hash(&sign_request.attribute_commit);
     let signature = (commit_hash, coconut.aggregate(&signature_shares, indexes));
 
-    // TODO: these should be class methods of Credential class
     let credential = coconut.make_credential(&verify_key, &signature, &attributes, Vec::new());
 
-    let is_verify = coconut.verify_credential(&verify_key, &credential, Vec::new());
+    let is_verify = credential.verify(&coconut.params, &verify_key, Vec::new());
     assert!(is_verify);
 }
