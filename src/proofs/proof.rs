@@ -80,7 +80,7 @@ pub struct ProofAssembly<'a> {
 impl<'a> ProofAssembly<'a> {
     pub fn new() -> Self {
         Self {
-            commits: Vec::new()
+            commits: Vec::new(),
         }
     }
 
@@ -96,4 +96,3 @@ impl<'a> ProofAssembly<'a> {
         hasher.finish()
     }
 }
-

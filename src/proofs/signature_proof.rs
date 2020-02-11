@@ -146,8 +146,7 @@ impl SignatureProof {
         ciphertexts: &Vec<EncryptedValue>,
     ) -> Box<SignatureProofCommitments<'a, R>> {
         // c c_m + r_r G_1 + sum(r_m H)
-        let mut commit_attributes =
-            attribute_commit * challenge + params.g1 * self.response_blind;
+        let mut commit_attributes = attribute_commit * challenge + params.g1 * self.response_blind;
         for (h, response) in izip!(&params.hs, &self.response_attributes) {
             commit_attributes += h * response;
         }
@@ -176,4 +175,3 @@ impl SignatureProof {
         })
     }
 }
-

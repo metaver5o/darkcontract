@@ -25,7 +25,7 @@ pub struct BlindSignatureRequest {
     attribute_commit: bls::G1Projective,
     encrypted_attributes: Vec<EncryptedValue>,
     challenge: bls::Scalar,
-    proof: SignatureProof
+    proof: SignatureProof,
 }
 
 impl BlindSignatureRequest {
@@ -41,7 +41,7 @@ type Signature = (bls::G1Projective, bls::G1Projective);
 
 pub struct SignatureX {
     commit_hash: bls::G1Projective,
-    signature: bls::G1Projective
+    signature: bls::G1Projective,
 }
 
 pub struct Credential {
@@ -145,7 +145,7 @@ impl<R: RngInstance> Coconut<R> {
         &self,
         shared_attribute_key: &'a ElGamalPublicKey<R>,
         attributes: &'a Vec<Attribute>,
-        external_commitments: Vec<Box<dyn ProofCommitments>>
+        external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> BlindSignatureRequest {
         let blinding_factor = self.params.random_scalar();
 
@@ -172,13 +172,11 @@ impl<R: RngInstance> Coconut<R> {
 
         // Construct proof
         // Witness
-        let proof_builder = SignatureProofBuilder::new(&self.params, attributes,
-                                                       &attribute_keys,
-                                                       &blinding_factor);
+        let proof_builder =
+            SignatureProofBuilder::new(&self.params, attributes, &attribute_keys, &blinding_factor);
         // Commits
-        let commitments = proof_builder.commitments(shared_attribute_key,
-                                                    &commit_hash,
-                                                    &attribute_commit);
+        let commitments =
+            proof_builder.commitments(shared_attribute_key, &commit_hash, &attribute_commit);
 
         let mut proof_assembly = ProofAssembly::new();
         proof_assembly.add(commitments);
@@ -195,7 +193,7 @@ impl<R: RngInstance> Coconut<R> {
             attribute_commit,
             encrypted_attributes,
             challenge,
-            proof
+            proof,
         }
     }
 
@@ -204,10 +202,11 @@ impl<R: RngInstance> Coconut<R> {
         secret_key: &SecretKey,
         shared_attribute_key: &ElGamalPublicKey<R>,
         request: &BlindSignatureRequest,
-        external_commitments: Vec<Box<dyn ProofCommitments>>
+        external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> Result<PartialSignature, &'static str> {
         assert_eq!(request.encrypted_attributes.len(), self.params.hs.len());
-        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = request.encrypted_attributes
+        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = request
+            .encrypted_attributes
             .iter()
             .map(|&(ref a, ref b)| (a, b))
             .unzip();
@@ -284,7 +283,7 @@ impl<R: RngInstance> Coconut<R> {
         verify_key: &VerifyKey,
         signature: &Signature,
         attributes: &Vec<Attribute>,
-        external_commitments: Vec<Box<dyn ProofCommitments>>
+        external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> Credential {
         let (commit_hash, sigma) = signature;
         assert_eq!(attributes.len(), verify_key.beta.len());
@@ -308,8 +307,7 @@ impl<R: RngInstance> Coconut<R> {
         // Witness
         let proof_builder = CredentialProofBuilder::new(&self.params, attributes, &blind);
         // Commits
-        let commitments = proof_builder.commitments(verify_key,
-                                                    &blind_commit_hash);
+        let commitments = proof_builder.commitments(verify_key, &blind_commit_hash);
 
         let mut proof_assembly = ProofAssembly::new();
         proof_assembly.add(commitments);
@@ -332,16 +330,19 @@ impl<R: RngInstance> Coconut<R> {
         }
     }
 
-    pub fn verify_credential(&self, verify_key: &VerifyKey, credential: &Credential,
-        external_commitments: Vec<Box<dyn ProofCommitments>>
-                             ) -> bool {
+    pub fn verify_credential(
+        &self,
+        verify_key: &VerifyKey,
+        credential: &Credential,
+        external_commitments: Vec<Box<dyn ProofCommitments>>,
+    ) -> bool {
         let commitments = credential.proof.commitments(
             &self.params,
             &credential.challenge,
             verify_key,
             &credential.blind_commit_hash,
             &credential.kappa,
-            &credential.v
+            &credential.v,
         );
 
         let mut proof_assembly = ProofAssembly::new();
