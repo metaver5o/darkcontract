@@ -246,6 +246,7 @@ fn test_signature_request_proof() {
     //
     // R = s G - c P
     let verify_commitments = proof.commitments(
+        &params,
         &challenge,
         &values.gamma,
         &values.commit_hash,

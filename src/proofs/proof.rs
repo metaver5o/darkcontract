@@ -65,22 +65,35 @@ impl ProofHasher {
     }
 }
 
-trait ProofBuilder {
+pub trait ProofBuilder {
     fn finish(&self, challenge: &bls::Scalar);
 }
 
-trait ProofCommitments {
+pub trait ProofCommitments {
     fn commit(&self, hasher: &mut ProofHasher);
 }
 
-pub struct ProofAssembly {
-    builders: Vec<Box<dyn ProofBuilder>>,
-    commits: Vec<Box<dyn ProofCommitments>>,
+pub struct ProofAssembly<'a> {
+    commits: Vec<Box<dyn ProofCommitments + 'a>>,
 }
 
-impl ProofAssembly {
-    fn add(&mut self, builder: Box<dyn ProofBuilder>, commit: Box<dyn ProofCommitments>) {
-        self.builders.push(builder);
+impl<'a> ProofAssembly<'a> {
+    pub fn new() -> Self {
+        Self {
+            commits: Vec::new()
+        }
+    }
+
+    pub fn add(&mut self, commit: Box<dyn ProofCommitments + 'a>) {
         self.commits.push(commit);
     }
+
+    pub fn compute_challenge(&self) -> bls::Scalar {
+        let mut hasher = ProofHasher::new();
+        for commit in &self.commits {
+            commit.commit(&mut hasher);
+        }
+        hasher.finish()
+    }
 }
+

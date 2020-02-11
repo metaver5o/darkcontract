@@ -4,6 +4,9 @@ use crate::bls_extensions::*;
 use crate::elgamal::*;
 use crate::old_proofs::*;
 use crate::parameters::*;
+use crate::proofs::credential_proof::*;
+use crate::proofs::proof::*;
+use crate::proofs::signature_proof::*;
 use crate::utility::*;
 
 pub struct SecretKey {
@@ -17,12 +20,29 @@ pub struct VerifyKey {
 }
 
 pub type Attribute = bls::Scalar;
-pub type BlindSignatureRequest = (bls::G1Projective, Vec<EncryptedValue>, SignerProof);
+
+pub struct BlindSignatureRequest {
+    attribute_commit: bls::G1Projective,
+    encrypted_attributes: Vec<EncryptedValue>,
+    challenge: bls::Scalar,
+    proof: SignatureProof
+}
+
+impl BlindSignatureRequest {
+    pub fn compute_commit_hash(&self) -> bls::G1Projective {
+        compute_commit_hash(&self.attribute_commit)
+    }
+}
 
 type PartialSignature = (bls::G1Projective, bls::G1Projective);
 type SignatureShare = bls::G1Projective;
 type CombinedSignatureShares = bls::G1Projective;
 type Signature = (bls::G1Projective, bls::G1Projective);
+
+pub struct SignatureX {
+    commit_hash: bls::G1Projective,
+    signature: bls::G1Projective
+}
 
 pub struct Credential {
     kappa: bls::G2Projective,
@@ -120,10 +140,11 @@ impl<R: RngInstance> Coconut<R> {
         };
     }
 
-    pub fn make_blind_sign_request(
+    pub fn make_blind_sign_request<'a>(
         &self,
-        shared_attribute_key: &ElGamalPublicKey<R>,
-        attributes: &Vec<Attribute>,
+        shared_attribute_key: &'a ElGamalPublicKey<R>,
+        attributes: &'a Vec<Attribute>,
+        external_commitments: Vec<Box<dyn ProofCommitments>>
     ) -> BlindSignatureRequest {
         let blinding_factor = self.params.random_scalar();
 
@@ -148,62 +169,70 @@ impl<R: RngInstance> Coconut<R> {
             .map(|(attribute, key)| shared_attribute_key.encrypt(&attribute, &key, &commit_hash))
             .collect();
 
-        /*
+        // Construct proof
         // Witness
-        let proof_builder = SignatureProofBuilder::new(&params, &attributes,
+        let proof_builder = SignatureProofBuilder::new(&self.params, attributes,
                                                        &attribute_keys,
                                                        &blinding_factor);
         // Commits
-        let commitments = proof_builder.commitments(shared_attribute_key, &commit_hash,
+        let commitments = proof_builder.commitments(shared_attribute_key,
+                                                    &commit_hash,
                                                     &attribute_commit);
+
+        let mut proof_assembly = ProofAssembly::new();
+        proof_assembly.add(commitments);
+        for commit in external_commitments {
+            proof_assembly.add(commit);
+        }
+
         // Challenge
-        let mut hasher = ProofHasher::new();
-        commitments.commit(&mut hasher);
-        let challenge = hasher.finish();
+        let challenge = proof_assembly.compute_challenge();
         //Responses
         let proof = proof_builder.finish(&challenge);
-        */
 
-        let signer_proof = make_signer_proof(
-            &self.params,
-            shared_attribute_key,
-            &encrypted_attributes,
-            &attribute_commit,
-            &commit_hash,
-            &attribute_keys,
-            &attributes,
-            &blinding_factor,
-        );
-
-        (attribute_commit, encrypted_attributes, signer_proof)
+        BlindSignatureRequest {
+            attribute_commit,
+            encrypted_attributes,
+            challenge,
+            proof
+        }
     }
 
     pub fn blind_sign(
         &self,
         secret_key: &SecretKey,
         shared_attribute_key: &ElGamalPublicKey<R>,
-        sign_request: &BlindSignatureRequest,
+        request: &BlindSignatureRequest,
+        external_commitments: Vec<Box<dyn ProofCommitments>>
     ) -> Result<PartialSignature, &'static str> {
-        let (attribute_commit, encrypted_attributes, signer_proof) = sign_request;
-
-        assert_eq!(encrypted_attributes.len(), self.params.hs.len());
-        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = encrypted_attributes
+        assert_eq!(request.encrypted_attributes.len(), self.params.hs.len());
+        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = request.encrypted_attributes
             .iter()
             .map(|&(ref a, ref b)| (a, b))
             .unzip();
 
         // Issue signature
-        let commit_hash = compute_commit_hash(attribute_commit);
+        let commit_hash = request.compute_commit_hash();
 
-        // Verify proof here
-        if !verify_signer_proof(
+        // Verify proof
+        let commitments = request.proof.commitments(
             &self.params,
-            &shared_attribute_key.public_key,
-            encrypted_attributes,
-            attribute_commit,
+            &request.challenge,
+            shared_attribute_key,
             &commit_hash,
-            signer_proof,
-        ) {
+            &request.attribute_commit,
+            &request.encrypted_attributes,
+        );
+        let mut proof_assembly = ProofAssembly::new();
+        proof_assembly.add(commitments);
+        for commit in external_commitments {
+            proof_assembly.add(commit);
+        }
+
+        // Challenge
+        let challenge = proof_assembly.compute_challenge();
+
+        if challenge != request.challenge {
             return Err("verify proof failed");
         }
 
@@ -353,13 +382,13 @@ fn test_multiparty_coconut() {
 
     let attributes = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
 
-    let sign_request = coconut.make_blind_sign_request(&gamma, &attributes);
+    let sign_request = coconut.make_blind_sign_request(&gamma, &attributes, Vec::new());
 
     let blind_signatures: Vec<_> = secret_keys
         .iter()
         .map(|secret_key| {
             coconut
-                .blind_sign(secret_key, &gamma, &sign_request)
+                .blind_sign(secret_key, &gamma, &sign_request, Vec::new())
                 .unwrap()
         })
         .collect();
@@ -376,7 +405,7 @@ fn test_multiparty_coconut() {
     signature_shares.remove(4);
     indexes.remove(4);
 
-    let commit_hash = compute_commit_hash(&sign_request.0);
+    let commit_hash = compute_commit_hash(&sign_request.attribute_commit);
     let signature = (commit_hash, coconut.aggregate(&signature_shares, indexes));
 
     let credential = coconut.make_credential(&verify_key, &signature, &attributes);

@@ -34,9 +34,7 @@ pub struct SignatureProofCommitments<'a, R: RngInstance> {
     commit_keys: Vec<(bls::G1Projective, bls::G1Projective)>,
 }
 
-pub struct SignatureProof<'a, R: RngInstance> {
-    params: &'a Parameters<R>,
-
+pub struct SignatureProof {
     // Responses
     response_blind: bls::Scalar,
     response_attributes: Vec<bls::Scalar>,
@@ -68,7 +66,7 @@ impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
         gamma: &'a ElGamalPublicKey<'a, R>,
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
-    ) -> SignatureProofCommitments<'a, R> {
+    ) -> Box<SignatureProofCommitments<'a, R>> {
         assert_eq!(self.witness_attributes.len(), self.params.hs.len());
 
         // w_o G_1 + sum(w_m H_j)
@@ -77,7 +75,7 @@ impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
             commit_attributes += h * witness;
         }
 
-        SignatureProofCommitments {
+        Box::new(SignatureProofCommitments {
             params: self.params,
             gamma,
             commit_hash,
@@ -95,16 +93,14 @@ impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
                     )
                 })
                 .collect(),
-        }
+        })
     }
 
-    pub fn finish(&self, challenge: &bls::Scalar) -> SignatureProof<'a, R> {
+    pub fn finish(&self, challenge: &bls::Scalar) -> SignatureProof {
         assert_eq!(self.witness_attributes.len(), self.attributes.len());
         assert_eq!(self.witness_keys.len(), self.attribute_keys.len());
 
         SignatureProof {
-            params: self.params,
-
             response_blind: self.witness_blind - challenge * self.blinding_factor,
 
             response_attributes: izip!(self.attributes, &self.witness_attributes)
@@ -118,8 +114,8 @@ impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
     }
 }
 
-impl<'a, R: RngInstance> SignatureProofCommitments<'a, R> {
-    pub fn commit(&self, hasher: &mut ProofHasher) {
+impl<'a, R: RngInstance> ProofCommitments for SignatureProofCommitments<'a, R> {
+    fn commit(&self, hasher: &mut ProofHasher) {
         // Add base points we use
         hasher.add_g1_affine(&self.params.g1);
         hasher.add_g2_affine(&self.params.g2);
@@ -139,24 +135,25 @@ impl<'a, R: RngInstance> SignatureProofCommitments<'a, R> {
     }
 }
 
-impl<'a, R: RngInstance> SignatureProof<'a, R> {
-    pub fn commitments(
+impl SignatureProof {
+    pub fn commitments<'a, R: RngInstance>(
         &self,
+        params: &'a Parameters<R>,
         challenge: &bls::Scalar,
         gamma: &'a ElGamalPublicKey<'a, R>,
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
         ciphertexts: &Vec<EncryptedValue>,
-    ) -> SignatureProofCommitments<R> {
+    ) -> Box<SignatureProofCommitments<'a, R>> {
         // c c_m + r_r G_1 + sum(r_m H)
         let mut commit_attributes =
-            attribute_commit * challenge + self.params.g1 * self.response_blind;
-        for (h, response) in izip!(&self.params.hs, &self.response_attributes) {
+            attribute_commit * challenge + params.g1 * self.response_blind;
+        for (h, response) in izip!(&params.hs, &self.response_attributes) {
             commit_attributes += h * response;
         }
 
-        SignatureProofCommitments {
-            params: self.params,
+        Box::new(SignatureProofCommitments {
+            params,
 
             gamma,
             commit_hash,
@@ -168,7 +165,7 @@ impl<'a, R: RngInstance> SignatureProof<'a, R> {
                 .map(|(response_attribute, response_key, ciphertext)| {
                     (
                         // c A_i + r_k_i G1
-                        ciphertext.0 * challenge + self.params.g1 * response_key,
+                        ciphertext.0 * challenge + params.g1 * response_key,
                         // c B_i + r_k_i Y + r_m_i h
                         ciphertext.1 * challenge
                             + gamma.public_key * response_key
@@ -176,6 +173,7 @@ impl<'a, R: RngInstance> SignatureProof<'a, R> {
                     )
                 })
                 .collect(),
-        }
+        })
     }
 }
+
