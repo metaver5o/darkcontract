@@ -29,9 +29,7 @@ pub struct CredentialProofCommitments<'a, R: RngInstance> {
     commit_blind: bls::G1Projective,
 }
 
-pub struct CredentialProof<'a, R: RngInstance> {
-    params: &'a Parameters<R>,
-
+pub struct CredentialProof {
     response_kappa: Vec<bls::Scalar>,
     response_blind: bls::Scalar,
 }
@@ -57,10 +55,10 @@ impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
         &self,
         verify_key: &'a VerifyKey,
         blind_commit_hash: &'a bls::G1Projective,
-    ) -> CredentialProofCommitments<'a, R> {
+    ) -> Box<CredentialProofCommitments<'a, R>> {
         assert_eq!(self.witness_kappa.len(), verify_key.beta.len());
 
-        CredentialProofCommitments {
+        Box::new(CredentialProofCommitments {
             params: self.params,
             verify_key,
             blind_commit_hash,
@@ -75,15 +73,13 @@ impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
                     .sum::<bls::G2Projective>(),
 
             commit_blind: blind_commit_hash * self.witness_blind,
-        }
+        })
     }
 
-    pub fn finish(&self, challenge: &bls::Scalar) -> CredentialProof<'a, R> {
+    pub fn finish(&self, challenge: &bls::Scalar) -> CredentialProof {
         assert_eq!(self.witness_kappa.len(), self.attributes.len());
 
         CredentialProof {
-            params: self.params,
-
             response_kappa: izip!(&self.witness_kappa, self.attributes)
                 .map(|(witness, attribute)| witness - challenge * attribute)
                 .collect(),
@@ -93,8 +89,8 @@ impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
     }
 }
 
-impl<'a, R: RngInstance> CredentialProofCommitments<'a, R> {
-    pub fn commit(&self, hasher: &mut ProofHasher) {
+impl<'a, R: RngInstance> ProofCommitments for CredentialProofCommitments<'a, R> {
+    fn commit(&self, hasher: &mut ProofHasher) {
         // Add base points we use
         hasher.add_g1_affine(&self.params.g1);
         hasher.add_g2_affine(&self.params.g2);
@@ -111,31 +107,33 @@ impl<'a, R: RngInstance> CredentialProofCommitments<'a, R> {
     }
 }
 
-impl<'a, R: RngInstance> CredentialProof<'a, R> {
-    pub fn commitments(
+impl CredentialProof {
+    pub fn commitments<'a, R: RngInstance>(
         &self,
+        params: &'a Parameters<R>,
         challenge: &bls::Scalar,
         verify_key: &'a VerifyKey,
         blind_commit_hash: &'a bls::G1Projective,
         kappa: &bls::G2Projective,
         v: &bls::G1Projective,
-    ) -> CredentialProofCommitments<R> {
+    ) -> Box<CredentialProofCommitments<'a, R>> {
         // c K + r_t G2 + (1 - c) A + sum(r_m_i B_i)
         let mut commit_kappa = kappa * challenge
-            + self.params.g2 * self.response_blind
+            + params.g2 * self.response_blind
             + verify_key.alpha * (bls::Scalar::one() - challenge);
         for (beta_i, response) in izip!(&verify_key.beta, &self.response_kappa) {
             commit_kappa += beta_i * response;
         }
 
-        CredentialProofCommitments {
-            params: self.params,
+        Box::new(CredentialProofCommitments {
+            params,
+
             verify_key,
             blind_commit_hash,
 
             commit_kappa,
 
             commit_blind: v * challenge + blind_commit_hash * self.response_blind,
-        }
+        })
     }
 }

@@ -288,6 +288,7 @@ fn test_credential_proof() {
     //
     // R = s G - c P
     let verify_commitments = proof.commitments(
+        &params,
         &challenge,
         &values.verify_key,
         &values.blind_commit_hash,

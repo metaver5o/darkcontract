@@ -47,9 +47,10 @@ pub struct SignatureX {
 pub struct Credential {
     kappa: bls::G2Projective,
     v: bls::G1Projective,
-    // sigma_price: (blind_commit_projective, blinded_sigma)
-    sigma_prime: (bls::G1Projective, bls::G1Projective),
-    proof: VerifyProof,
+    blind_commit_hash: bls::G1Projective,
+    blind_sigma: bls::G1Projective,
+    challenge: bls::Scalar,
+    proof: CredentialProof,
 }
 
 pub struct Coconut<R: RngInstance> {
@@ -283,12 +284,13 @@ impl<R: RngInstance> Coconut<R> {
         verify_key: &VerifyKey,
         signature: &Signature,
         attributes: &Vec<Attribute>,
+        external_commitments: Vec<Box<dyn ProofCommitments>>
     ) -> Credential {
         let (commit_hash, sigma) = signature;
         assert_eq!(attributes.len(), verify_key.beta.len());
 
         let blind_prime = self.params.random_scalar();
-        let (blinded_commit_hash, blinded_sigma) = (commit_hash * blind_prime, sigma * blind_prime);
+        let (blind_commit_hash, blind_sigma) = (commit_hash * blind_prime, sigma * blind_prime);
 
         let blind = self.params.random_scalar();
 
@@ -300,38 +302,64 @@ impl<R: RngInstance> Coconut<R> {
                 .zip(attributes.iter())
                 .map(|(beta_i, attribute)| beta_i * attribute)
                 .sum::<bls::G2Projective>();
-        let v = blinded_commit_hash * blind;
+        let v = blind_commit_hash * blind;
 
-        let proof = make_verify_proof(
-            &self.params,
-            verify_key,
-            &blinded_commit_hash,
-            attributes,
-            &blind,
-        );
+        // Construct proof
+        // Witness
+        let proof_builder = CredentialProofBuilder::new(&self.params, attributes, &blind);
+        // Commits
+        let commitments = proof_builder.commitments(verify_key,
+                                                    &blind_commit_hash);
+
+        let mut proof_assembly = ProofAssembly::new();
+        proof_assembly.add(commitments);
+        for commit in external_commitments {
+            proof_assembly.add(commit);
+        }
+
+        // Challenge
+        let challenge = proof_assembly.compute_challenge();
+        //Responses
+        let proof = proof_builder.finish(&challenge);
 
         Credential {
             kappa: kappa,
             v: v,
-            sigma_prime: (blinded_commit_hash, blinded_sigma),
+            blind_commit_hash,
+            blind_sigma,
+            challenge,
             proof,
         }
     }
 
-    pub fn verify_credential(&self, verify_key: &VerifyKey, credential: &Credential) -> bool {
-        if !verify_verify_proof(
+    pub fn verify_credential(&self, verify_key: &VerifyKey, credential: &Credential,
+        external_commitments: Vec<Box<dyn ProofCommitments>>
+                             ) -> bool {
+        let commitments = credential.proof.commitments(
             &self.params,
+            &credential.challenge,
             verify_key,
-            &credential.sigma_prime.0,
+            &credential.blind_commit_hash,
             &credential.kappa,
-            &credential.v,
-            &credential.proof,
-        ) {
+            &credential.v
+        );
+
+        let mut proof_assembly = ProofAssembly::new();
+        proof_assembly.add(commitments);
+        for commit in external_commitments {
+            proof_assembly.add(commit);
+        }
+
+        // Challenge
+        let challenge = proof_assembly.compute_challenge();
+
+        if challenge != credential.challenge {
             return false;
         }
+
         let kappa = bls::G2Affine::from(credential.kappa);
-        let blind_commit = bls::G1Affine::from(credential.sigma_prime.0);
-        let sigma_nu = bls::G1Affine::from(credential.sigma_prime.1 + credential.v);
+        let blind_commit = bls::G1Affine::from(credential.blind_commit_hash);
+        let sigma_nu = bls::G1Affine::from(credential.blind_sigma + credential.v);
         bls::pairing(&blind_commit, &kappa) == bls::pairing(&sigma_nu, &self.params.g2)
     }
 }
@@ -408,8 +436,9 @@ fn test_multiparty_coconut() {
     let commit_hash = compute_commit_hash(&sign_request.attribute_commit);
     let signature = (commit_hash, coconut.aggregate(&signature_shares, indexes));
 
-    let credential = coconut.make_credential(&verify_key, &signature, &attributes);
+    // TODO: these should be class methods of Credential class
+    let credential = coconut.make_credential(&verify_key, &signature, &attributes, Vec::new());
 
-    let is_verify = coconut.verify_credential(&verify_key, &credential);
+    let is_verify = coconut.verify_credential(&verify_key, &credential, Vec::new());
     assert!(is_verify);
 }
