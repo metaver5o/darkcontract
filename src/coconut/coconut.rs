@@ -20,106 +20,22 @@ pub struct VerifyKey {
 
 pub type Attribute = bls::Scalar;
 
-pub struct BlindSignatureRequest {
-    attribute_commit: bls::G1Projective,
-    encrypted_attributes: Vec<EncryptedValue>,
-    challenge: bls::Scalar,
-    proof: SignatureProof,
-}
-
-impl BlindSignatureRequest {
-    pub fn compute_commit_hash(&self) -> bls::G1Projective {
-        compute_commit_hash(&self.attribute_commit)
-    }
-
-    pub fn blind_sign<R: RngInstance>(
-        &self,
-        params: &Parameters<R>,
-        secret_key: &SecretKey,
-        shared_attribute_key: &ElGamalPublicKey<R>,
-        external_commitments: Vec<Box<dyn ProofCommitments>>,
-    ) -> Result<PartialSignature, &'static str> {
-        assert_eq!(self.encrypted_attributes.len(), params.hs.len());
-        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = self
-            .encrypted_attributes
-            .iter()
-            .map(|value| (&value.0, &value.1))
-            .unzip();
-
-        // Issue signature
-        let commit_hash = self.compute_commit_hash();
-
-        // Verify proof
-        let commitments = self.proof.commitments(
-            params,
-            &self.challenge,
-            shared_attribute_key,
-            &commit_hash,
-            &self.attribute_commit,
-            &self.encrypted_attributes,
-        );
-        let mut proof_assembly = ProofAssembly::new();
-        proof_assembly.add(commitments);
-        for commit in external_commitments {
-            proof_assembly.add(commit);
-        }
-
-        // Challenge
-        let challenge = proof_assembly.compute_challenge();
-
-        if challenge != self.challenge {
-            return Err("verify proof failed");
-        }
-
-        // TODO: Add public attributes - need to see about selective reveal
-        let signature_a = secret_key
-            .y
-            .iter()
-            .zip(a_factors.iter())
-            .map(|(y_j, a)| *a * y_j)
-            .sum();
-
-        let signature_b = commit_hash * secret_key.x
-            + secret_key
-                .y
-                .iter()
-                .zip(b_factors.iter())
-                .map(|(y_j, b)| *b * y_j)
-                .sum::<bls::G1Projective>();
-
-        Ok(PartialSignature { encrypted_value: (signature_a, signature_b) })
-    }
-}
-
 type SignatureShare = bls::G1Projective;
 type CombinedSignatureShares = bls::G1Projective;
-type Signature = (bls::G1Projective, bls::G1Projective);
 
 pub struct PartialSignature {
-    encrypted_value: EncryptedValue
+    encrypted_value: EncryptedValue,
 }
 
 impl PartialSignature {
-    pub fn unblind<R: RngInstance>(
-        &self,
-        private_key: &ElGamalPrivateKey<R>,
-    ) -> SignatureShare {
+    pub fn unblind<R: RngInstance>(&self, private_key: &ElGamalPrivateKey<R>) -> SignatureShare {
         private_key.decrypt(&self.encrypted_value)
     }
 }
 
-pub struct SignatureX {
-    commit_hash: bls::G1Projective,
-    signature: bls::G1Projective,
-}
-
-pub struct Credential {
-    kappa: bls::G2Projective,
-    v: bls::G1Projective,
-    blind_commit_hash: bls::G1Projective,
-    blind_sigma: bls::G1Projective,
-    challenge: bls::Scalar,
-    proof: CredentialProof,
+pub struct Signature {
+    pub commit_hash: bls::G1Projective,
+    pub sigma: bls::G1Projective,
 }
 
 pub struct Coconut<R: RngInstance> {
@@ -288,11 +204,13 @@ impl<R: RngInstance> Coconut<R> {
         attributes: &Vec<Attribute>,
         external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> Credential {
-        let (commit_hash, sigma) = signature;
         assert_eq!(attributes.len(), verify_key.beta.len());
 
         let blind_prime = self.params.random_scalar();
-        let (blind_commit_hash, blind_sigma) = (commit_hash * blind_prime, sigma * blind_prime);
+        let (blind_commit_hash, blind_sigma) = (
+            signature.commit_hash * blind_prime,
+            signature.sigma * blind_prime,
+        );
 
         let blind = self.params.random_scalar();
 
@@ -332,6 +250,88 @@ impl<R: RngInstance> Coconut<R> {
             proof,
         }
     }
+}
+
+pub struct BlindSignatureRequest {
+    attribute_commit: bls::G1Projective,
+    encrypted_attributes: Vec<EncryptedValue>,
+    challenge: bls::Scalar,
+    proof: SignatureProof,
+}
+
+impl BlindSignatureRequest {
+    pub fn compute_commit_hash(&self) -> bls::G1Projective {
+        compute_commit_hash(&self.attribute_commit)
+    }
+
+    pub fn blind_sign<R: RngInstance>(
+        &self,
+        params: &Parameters<R>,
+        secret_key: &SecretKey,
+        shared_attribute_key: &ElGamalPublicKey<R>,
+        external_commitments: Vec<Box<dyn ProofCommitments>>,
+    ) -> Result<PartialSignature, &'static str> {
+        assert_eq!(self.encrypted_attributes.len(), params.hs.len());
+        let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = self
+            .encrypted_attributes
+            .iter()
+            .map(|value| (&value.0, &value.1))
+            .unzip();
+
+        // Issue signature
+        let commit_hash = self.compute_commit_hash();
+
+        // Verify proof
+        let commitments = self.proof.commitments(
+            params,
+            &self.challenge,
+            shared_attribute_key,
+            &commit_hash,
+            &self.attribute_commit,
+            &self.encrypted_attributes,
+        );
+        let mut proof_assembly = ProofAssembly::new();
+        proof_assembly.add(commitments);
+        for commit in external_commitments {
+            proof_assembly.add(commit);
+        }
+
+        // Challenge
+        let challenge = proof_assembly.compute_challenge();
+
+        if challenge != self.challenge {
+            return Err("verify proof failed");
+        }
+
+        // TODO: Add public attributes - need to see about selective reveal
+        let signature_a = secret_key
+            .y
+            .iter()
+            .zip(a_factors.iter())
+            .map(|(y_j, a)| *a * y_j)
+            .sum();
+
+        let signature_b = commit_hash * secret_key.x
+            + secret_key
+                .y
+                .iter()
+                .zip(b_factors.iter())
+                .map(|(y_j, b)| *b * y_j)
+                .sum::<bls::G1Projective>();
+
+        Ok(PartialSignature {
+            encrypted_value: (signature_a, signature_b),
+        })
+    }
+}
+
+pub struct Credential {
+    kappa: bls::G2Projective,
+    v: bls::G1Projective,
+    blind_commit_hash: bls::G1Projective,
+    blind_sigma: bls::G1Projective,
+    challenge: bls::Scalar,
+    proof: CredentialProof,
 }
 
 impl Credential {

@@ -72,11 +72,13 @@ fn test_multiparty_coconut() {
     indexes.remove(4);
 
     let commit_hash = sign_request.compute_commit_hash();
-    let signature = (commit_hash, coconut.aggregate(&signature_shares, indexes));
+    let signature = Signature {
+        commit_hash,
+        sigma: coconut.aggregate(&signature_shares, indexes),
+    };
 
     let credential = coconut.make_credential(&verify_key, &signature, &attributes, Vec::new());
 
     let is_verify = credential.verify(&coconut.params, &verify_key, Vec::new());
     assert!(is_verify);
 }
-
