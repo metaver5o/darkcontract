@@ -4,10 +4,14 @@ use crate::bls_extensions::*;
 use crate::coconut::*;
 use crate::elgamal::*;
 use crate::parameters::*;
+#[allow(unused_imports)]
 use crate::proofs::credential_proof::*;
+#[allow(unused_imports)]
 use crate::proofs::proof::*;
+#[allow(unused_imports)]
 use crate::proofs::signature_proof::*;
 
+#[allow(dead_code)]
 struct TestValues<'a, R: RngInstance> {
     attributes: Vec<bls::Scalar>,
     attribute_keys: Vec<bls::Scalar>,
@@ -24,6 +28,7 @@ struct TestValues<'a, R: RngInstance> {
 }
 
 impl<'a, R: RngInstance> TestValues<'a, R> {
+    #[allow(dead_code)]
     fn setup(params: &'a Parameters<R>) -> Self {
         Self {
             attributes: vec![bls::Scalar::from(110), bls::Scalar::from(4)],

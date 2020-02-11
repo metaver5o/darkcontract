@@ -97,10 +97,12 @@ impl<'a, R: RngInstance> ProofCommitments for CredentialProofCommitments<'a, R> 
         for h in &self.params.hs {
             hasher.add_g1_affine(h);
         }
+
         hasher.add_g2(&self.verify_key.alpha);
         for beta in &self.verify_key.beta {
             hasher.add_g2(beta);
         }
+        hasher.add_g1(self.blind_commit_hash);
 
         hasher.add_g2(&self.commit_kappa);
         hasher.add_g1(&self.commit_blind);
