@@ -1,8 +1,13 @@
+#[allow(unused_imports)]
 use bls12_381 as bls;
 
+#[allow(unused_imports)]
 use crate::bls_extensions::*;
+#[allow(unused_imports)]
 use crate::coconut::coconut::*;
+#[allow(unused_imports)]
 use crate::elgamal::*;
+#[allow(unused_imports)]
 use crate::utility::*;
 
 #[test]
@@ -34,7 +39,7 @@ fn test_multiparty_keygen() {
 
 #[test]
 fn test_multiparty_coconut() {
-    let attributes_size = 2;
+    let attributes_size = 3;
     let (threshold, number_authorities) = (5, 7);
 
     let coconut = Coconut::<OsRngInstance>::new(attributes_size, threshold, number_authorities);
@@ -46,15 +51,27 @@ fn test_multiparty_coconut() {
     let d = ElGamalPrivateKey::new(&coconut.params);
     let gamma = d.to_public();
 
-    let attributes = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
+    let private_attributes = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
+    let public_attributes = vec![bls::Scalar::from(256)];
 
-    let sign_request = coconut.make_blind_sign_request(&gamma, &attributes, Vec::new());
+    let sign_request = coconut.make_blind_sign_request(
+        &gamma,
+        &private_attributes,
+        &public_attributes,
+        Vec::new(),
+    );
 
     let blind_signatures: Vec<_> = secret_keys
         .iter()
         .map(|secret_key| {
             sign_request
-                .blind_sign(&coconut.params, secret_key, &gamma, Vec::new())
+                .blind_sign(
+                    &coconut.params,
+                    secret_key,
+                    &gamma,
+                    &public_attributes,
+                    Vec::new(),
+                )
                 .unwrap()
         })
         .collect();
@@ -77,8 +94,12 @@ fn test_multiparty_coconut() {
         sigma: coconut.aggregate(&signature_shares, indexes),
     };
 
-    let credential = coconut.make_credential(&verify_key, &signature, &attributes, Vec::new());
+    let private_attributes2 = vec![bls::Scalar::from(110)];
+    let public_attributes2 = vec![bls::Scalar::from(4), bls::Scalar::from(256)];
 
-    let is_verify = credential.verify(&coconut.params, &verify_key, Vec::new());
+    let credential =
+        coconut.make_credential(&verify_key, &signature, &private_attributes2, Vec::new());
+
+    let is_verify = credential.verify(&coconut.params, &verify_key, &public_attributes2, Vec::new());
     assert!(is_verify);
 }

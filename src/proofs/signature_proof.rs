@@ -1,5 +1,5 @@
 use bls12_381 as bls;
-use itertools::izip;
+use itertools::{chain, izip};
 
 use crate::bls_extensions::*;
 use crate::elgamal::*;
@@ -10,7 +10,8 @@ pub struct SignatureProofBuilder<'a, R: RngInstance> {
     params: &'a Parameters<R>,
 
     // Secrets
-    attributes: &'a Vec<bls::Scalar>,
+    private_attributes: &'a Vec<bls::Scalar>,
+    public_attributes: &'a Vec<bls::Scalar>,
     attribute_keys: &'a Vec<bls::Scalar>,
     blinding_factor: &'a bls::Scalar,
 
@@ -44,19 +45,27 @@ pub struct SignatureProof {
 impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
     pub fn new(
         params: &'a Parameters<R>,
-        attributes: &'a Vec<bls::Scalar>,
+        private_attributes: &'a Vec<bls::Scalar>,
+        public_attributes: &'a Vec<bls::Scalar>,
         attribute_keys: &'a Vec<bls::Scalar>,
         blinding_factor: &'a bls::Scalar,
     ) -> Self {
+        assert_eq!(
+            params.hs.len(),
+            private_attributes.len() + public_attributes.len()
+        );
+
         Self {
             params,
 
-            attributes,
+            private_attributes,
+            public_attributes,
             attribute_keys,
             blinding_factor,
 
             witness_blind: params.random_scalar(),
-            witness_attributes: params.random_scalars(attributes.len()),
+            witness_attributes: params
+                .random_scalars(private_attributes.len() + public_attributes.len()),
             witness_keys: params.random_scalars(attribute_keys.len()),
         }
     }
@@ -69,7 +78,7 @@ impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
     ) -> Box<SignatureProofCommitments<'a, R>> {
         assert_eq!(self.witness_attributes.len(), self.params.hs.len());
 
-        // w_o G_1 + sum(w_m H_j)
+        // w_o G_1 + sum(w_m H_i)
         let mut commit_attributes = self.params.g1 * self.witness_blind;
         for (h, witness) in izip!(&self.params.hs, &self.witness_attributes) {
             commit_attributes += h * witness;
@@ -86,9 +95,9 @@ impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
             commit_keys: izip!(&self.witness_attributes, &self.witness_keys)
                 .map(|(witness_attribute, witness_key)| {
                     (
-                        // w_k_j G_1
+                        // w_k_i G_1
                         self.params.g1 * witness_key,
-                        // w_m_j h + w_k_j Y
+                        // w_m_i h + w_k_i Y
                         commit_hash * witness_attribute + gamma.public_key * witness_key,
                     )
                 })
@@ -97,15 +106,21 @@ impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
     }
 
     pub fn finish(&self, challenge: &bls::Scalar) -> SignatureProof {
-        assert_eq!(self.witness_attributes.len(), self.attributes.len());
+        assert_eq!(
+            self.witness_attributes.len(),
+            self.private_attributes.len() + self.public_attributes.len()
+        );
         assert_eq!(self.witness_keys.len(), self.attribute_keys.len());
 
         SignatureProof {
             response_blind: self.witness_blind - challenge * self.blinding_factor,
 
-            response_attributes: izip!(self.attributes, &self.witness_attributes)
-                .map(|(attribute, witness)| witness - challenge * attribute)
-                .collect(),
+            response_attributes: izip!(
+                chain(self.private_attributes, self.public_attributes),
+                &self.witness_attributes
+            )
+            .map(|(attribute, witness)| witness - challenge * attribute)
+            .collect(),
 
             response_keys: izip!(self.attribute_keys, &self.witness_keys)
                 .map(|(key, witness)| witness - challenge * key)

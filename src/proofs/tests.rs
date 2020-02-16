@@ -13,7 +13,8 @@ use crate::proofs::signature_proof::*;
 
 #[allow(dead_code)]
 struct TestValues<'a, R: RngInstance> {
-    attributes: Vec<bls::Scalar>,
+    private_attributes: Vec<bls::Scalar>,
+    public_attributes: Vec<bls::Scalar>,
     attribute_keys: Vec<bls::Scalar>,
     blinding_factor: bls::Scalar,
     gamma: ElGamalPublicKey<'a, R>,
@@ -31,7 +32,9 @@ impl<'a, R: RngInstance> TestValues<'a, R> {
     #[allow(dead_code)]
     fn setup(params: &'a Parameters<R>) -> Self {
         Self {
-            attributes: vec![bls::Scalar::from(110), bls::Scalar::from(4)],
+            private_attributes: vec![bls::Scalar::from(110), bls::Scalar::from(4)],
+            //public_attributes: vec![bls::Scalar::from(256)],
+            public_attributes: Vec::new(),
             attribute_keys: vec![
                 bls::Scalar::from_bytes(&[
                     0xec, 0x37, 0x03, 0x7b, 0x33, 0xf4, 0x5c, 0x2e, 0xd0, 0x56, 0xf2, 0x46, 0x43,
@@ -230,7 +233,8 @@ fn test_signature_request_proof() {
     // random k
     let proof_builder = SignatureProofBuilder::new(
         &params,
-        &values.attributes,
+        &values.private_attributes,
+        &values.public_attributes,
         &values.attribute_keys,
         &values.blinding_factor,
     );
@@ -269,14 +273,15 @@ fn test_signature_request_proof() {
 
 #[test]
 fn test_credential_proof() {
-    let params = Parameters::<OsRngInstance>::new(2);
+    let params = Parameters::<OsRngInstance>::new(3);
     let values = TestValues::setup(&params);
 
     //
     // Signing steps
     //
     // random k
-    let proof_builder = CredentialProofBuilder::new(&params, &values.attributes, &values.blind);
+    let proof_builder =
+        CredentialProofBuilder::new(&params, &values.private_attributes, &values.blind);
     // R = k G
     let commitments = proof_builder.commitments(&values.verify_key, &values.blind_commit_hash);
 

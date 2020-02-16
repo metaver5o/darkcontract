@@ -56,7 +56,7 @@ impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
         verify_key: &'a VerifyKey,
         blind_commit_hash: &'a bls::G1Projective,
     ) -> Box<CredentialProofCommitments<'a, R>> {
-        assert_eq!(self.witness_kappa.len(), verify_key.beta.len());
+        assert!(self.witness_kappa.len() <= verify_key.beta.len());
 
         Box::new(CredentialProofCommitments {
             params: self.params,
