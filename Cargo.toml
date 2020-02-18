@@ -2,7 +2,7 @@
 name = "darktoken"
 version = "0.0.5"
 authors = ["Amir Taaki <amir@dyne.org>"]
-license = "gpl"
+license = "GPL-3.0-or-later"
 description = "dark credentials and tokens with multiple attributes and custom schnorr proofs"
 edition = "2018"
 repository = "https://github.com/narodnik/darktoken"
