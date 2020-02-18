@@ -3,18 +3,3 @@ https://electriccoin.co/blog/pairing-cryptography-in-rust/
 
 Originally pairing library, now renamed to bls12_381
 
-TODO:
-* Cleanup code
-* Organize tuples into data structures and type aliases
-* Abstract common operations (witness - challenge * response),
-  computing challenges, ...
-* Finish sum trait for G1/G2... create new trait for shared stuff make pullreq
-* Organize into new API with structs
-* Add public attributes
-* Properly find terms for each term
-* Move shared state and config into a coconut struct
-* Document API and make unit tests
-* Create ProofBuilder class which is extendable with custom phi value from paper
-* Support for other curves
-* Optimizations
-
