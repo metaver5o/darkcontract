@@ -1,5 +1,7 @@
-use crate::bls_extensions::*;
 use bls12_381 as bls;
+
+use crate::bls_extensions::*;
+use crate::hashable::*;
 
 pub struct Parameters<R: RngInstance> {
     pub g1: bls::G1Affine,

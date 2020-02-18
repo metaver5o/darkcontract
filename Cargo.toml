@@ -1,5 +1,5 @@
 [package]
-name = "coconut"
+name = "darktoken"
 version = "0.1.0"
 authors = ["Amir Taaki <amir@dyne.org>"]
 edition = "2018"
@@ -11,8 +11,8 @@ itertools = "0.8.2"
 rand_core = "0.5.1"
 rand = "0.7.2"
 sha2 = "0.8.0"
-bls12_381 = { version = "0.1.0", path = "../bls12_381" }
-#bls12_381 = { git = "https://github.com/zkcrypto/bls12_381" }
+#bls12_381 = { version = "0.1.0", path = "../bls12_381" }
+bls12_381 = { git = "https://github.com/zkcrypto/bls12_381" }
 # Just for debugging, TODO: remove this
 hex-slice = "0.1.4"
 

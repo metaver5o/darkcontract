@@ -1,8 +1,7 @@
 use std::borrow::Borrow;
-
 use bls12_381 as bls;
 
-use crate::bls_extensions::*;
+use crate::hashable::*;
 
 pub fn compute_polynomial<'a, I>(coefficients: I, x_primitive: u64) -> bls::Scalar
 where
