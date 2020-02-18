@@ -1,5 +1,7 @@
 #[allow(unused_imports)]
 use bls12_381 as bls;
+#[allow(unused_imports)]
+use itertools::izip;
 
 #[allow(unused_imports)]
 use crate::bls_extensions::*;
@@ -26,11 +28,11 @@ fn test_multiparty_keygen() {
         .map(|secret_key| coconut.params.g1 * secret_key.x)
         .collect();
     let l = lagrange_basis_from_range(6);
-    let sig = &l
-        .iter()
-        .zip(sigs_x.iter())
-        .map(|(l_i, s_i)| s_i * l_i)
-        .sum();
+
+    let mut sig = bls::G1Projective::identity();
+    for (s_i, l_i) in izip!(&sigs_x, &l) {
+        sig += s_i * l_i;
+    }
 
     let ppair_1 = bls::pairing(&bls::G1Affine::from(sig), &coconut.params.g2);
     let ppair_2 = bls::pairing(&coconut.params.g1, &bls::G2Affine::from(verify_key.alpha));

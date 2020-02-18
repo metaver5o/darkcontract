@@ -58,19 +58,18 @@ impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
     ) -> Box<CredentialProofCommitments<'a, R>> {
         assert!(self.witness_kappa.len() <= verify_key.beta.len());
 
+        //  w_o G_2 + A + sum(w_k_i B_i)
+        let mut commit_kappa = self.params.g2 * self.witness_blind + verify_key.alpha;
+        for (beta_i, witness) in izip!(&verify_key.beta, &self.witness_kappa) {
+            commit_kappa += beta_i * witness;
+        }
+
         Box::new(CredentialProofCommitments {
             params: self.params,
             verify_key,
             blind_commit_hash,
 
-            commit_kappa: self.params.g2 * self.witness_blind
-                + verify_key.alpha
-                + self
-                    .witness_kappa
-                    .iter()
-                    .zip(verify_key.beta.iter())
-                    .map(|(witness, beta_i)| beta_i * witness)
-                    .sum::<bls::G2Projective>(),
+            commit_kappa,
 
             commit_blind: blind_commit_hash * self.witness_blind,
         })

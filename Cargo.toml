@@ -1,18 +1,16 @@
 [package]
 name = "darktoken"
-version = "0.1.0"
+version = "0.0.5"
 authors = ["Amir Taaki <amir@dyne.org>"]
+license = "gpl"
+description = "dark credentials and tokens with multiple attributes and custom schnorr proofs"
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+repository = "https://github.com/narodnik/darktoken"
 
 [dependencies]
 itertools = "0.8.2"
 rand_core = "0.5.1"
 rand = "0.7.2"
 sha2 = "0.8.0"
-#bls12_381 = { version = "0.1.0", path = "../bls12_381" }
-bls12_381 = { git = "https://github.com/zkcrypto/bls12_381" }
-# Just for debugging, TODO: remove this
-hex-slice = "0.1.4"
+bls12_381 = { version = "0.1.1" }
 

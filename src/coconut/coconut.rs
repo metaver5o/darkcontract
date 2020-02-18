@@ -111,13 +111,18 @@ impl<R: RngInstance> Coconut<R> {
 
         assert_eq!(lagrange.len(), alpha.len());
 
-        let aggregate_alpha = alpha.iter().zip(lagrange.iter()).map(|(a, l)| *a * l).sum();
+        let mut aggregate_alpha = bls::G2Projective::identity();
+        for (alpha_i, lagrange_i) in izip!(alpha, &lagrange) {
+            aggregate_alpha += alpha_i * lagrange_i;
+        }
+
         let aggregate_beta: Vec<_> = (0..attributes_size)
             .map(|i| {
-                beta.iter()
-                    .zip(lagrange.iter())
-                    .map(|(b, l)| b[i] * l)
-                    .sum()
+                let mut result = bls::G2Projective::identity();
+                for (beta_j, lagrange_i) in izip!(&beta, &lagrange) {
+                    result += beta_j[i] * lagrange_i;
+                }
+                result
             })
             .collect();
 
@@ -198,12 +203,11 @@ impl<R: RngInstance> Coconut<R> {
     ) -> CombinedSignatureShares {
         let lagrange = lagrange_basis(indexes.iter());
 
-        let aggregate_shares = signature_shares
-            .iter()
-            .zip(lagrange.iter())
-            .map(|(signature_share, lagrange_i)| signature_share * lagrange_i)
-            .sum();
-        aggregate_shares
+        let mut signature = bls::G1Projective::identity();
+        for (share, lagrange_i) in izip!(signature_shares, lagrange) {
+            signature += share * lagrange_i;
+        }
+        signature
     }
 
     pub fn make_credential(
@@ -223,14 +227,12 @@ impl<R: RngInstance> Coconut<R> {
 
         let blind = self.params.random_scalar();
 
-        let kappa = self.params.g2 * blind
-            + verify_key.alpha
-            + verify_key
-                .beta
-                .iter()
-                .zip(attributes.iter())
-                .map(|(beta_i, attribute)| beta_i * attribute)
-                .sum::<bls::G2Projective>();
+        // K = o G2 + A + sum(m_i B_i)
+        let mut kappa = self.params.g2 * blind + verify_key.alpha;
+        for (beta_i, attribute) in izip!(&verify_key.beta, attributes) {
+            kappa += beta_i * attribute;
+        }
+        // v = r H_p(C_m)
         let v = blind_commit_hash * blind;
 
         // Construct proof
