@@ -6,6 +6,9 @@ license = "gpl"
 description = "dark credentials and tokens with multiple attributes and custom schnorr proofs"
 edition = "2018"
 repository = "https://github.com/narodnik/darktoken"
+exclude = [
+    "extern/*"
+]
 
 [dependencies]
 itertools = "0.8.2"
