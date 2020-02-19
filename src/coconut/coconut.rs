@@ -46,7 +46,7 @@ pub struct Coconut<R: RngInstance> {
 }
 
 impl<R: RngInstance> Coconut<R> {
-    pub fn new(attributes_size: usize, authorities_threshold: u32, authorities_total: u32) -> Self {
+    pub fn new(attributes_size: u32, authorities_threshold: u32, authorities_total: u32) -> Self {
         Self {
             params: Parameters::<R>::new(attributes_size),
             threshold: authorities_threshold,
@@ -283,7 +283,10 @@ impl BlindSignatureRequest {
         public_attributes: &Vec<Attribute>,
         external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> Result<PartialSignature, &'static str> {
-        assert_eq!(self.encrypted_attributes.len() + public_attributes.len(), params.hs.len());
+        assert_eq!(
+            self.encrypted_attributes.len() + public_attributes.len(),
+            params.hs.len()
+        );
         let (a_factors, b_factors): (Vec<&_>, Vec<&_>) = self
             .encrypted_attributes
             .iter()

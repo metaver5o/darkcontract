@@ -31,4 +31,3 @@ impl RandomScalar for bls::Scalar {
         }
     }
 }
-

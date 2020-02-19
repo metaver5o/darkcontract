@@ -11,7 +11,7 @@ pub struct Parameters<R: RngInstance> {
 }
 
 impl<R: RngInstance> Parameters<R> {
-    pub fn new(attributes_size: usize) -> Self {
+    pub fn new(attributes_size: u32) -> Self {
         let g1 = bls::G1Affine::generator();
         let g2 = bls::G2Affine::generator();
 

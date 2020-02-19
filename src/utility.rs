@@ -1,5 +1,5 @@
-use std::borrow::Borrow;
 use bls12_381 as bls;
+use std::borrow::Borrow;
 
 use crate::hashable::*;
 
