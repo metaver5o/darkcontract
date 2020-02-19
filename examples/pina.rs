@@ -68,18 +68,29 @@ struct Token<'a> {
     private_key: darktoken::ElGamalPrivateKey<'a, darktoken::OsRngInstance>,
 }
 
-struct Wallet {
+struct Wallet<'a> {
     coconut: darktoken::Coconut<darktoken::OsRngInstance>,
+    verify_key: &'a darktoken::VerifyKey,
 }
 
-impl Wallet {
-    fn new(settings: &CoconutSettings) -> Self {
+struct WithdrawRequest {
+    burn_value: bls::G1Projective,
+    burn_proof: BurnProof,
+    credential: darktoken::Credential,
+}
+
+impl<'a> Wallet<'a> {
+    fn new(
+        settings: &CoconutSettings,
+        verify_key: &'a darktoken::VerifyKey,
+    ) -> Self {
         Self {
             coconut: darktoken::Coconut::<darktoken::OsRngInstance>::new(
                 settings.attributes,
                 settings.threshold,
                 settings.total,
             ),
+            verify_key,
         }
     }
 
@@ -130,6 +141,142 @@ impl Wallet {
             private_key,
         }
     }
+
+    fn withdraw(&self, token: Token) -> WithdrawRequest {
+        let burn_value = self.coconut.params.g1 * token.serial;
+
+        let proof_builder = BurnProofBuilder::new(&self.coconut.params, &token.serial);
+        let commitments = proof_builder.commitments();
+
+        let private_attributes = vec![token.serial, bls::Scalar::from(token.value)];
+
+        let credential = self.coconut.make_credential(
+            self.verify_key,
+            &token.signature,
+            &private_attributes,
+            vec![commitments],
+        );
+
+        assert!(credential.verify(
+            &self.coconut.params,
+            &self.verify_key,
+            &Vec::new(),
+            vec![proof_builder.commitments()],
+        ));
+
+        let burn_proof = proof_builder.finish(&credential.challenge);
+
+        WithdrawRequest {
+            burn_value,
+            burn_proof,
+            credential,
+        }
+    }
+}
+
+struct BurnProofBuilder<'a, R: darktoken::RngInstance> {
+    params: &'a darktoken::Parameters<R>,
+
+    // Secrets
+    serial: &'a bls::Scalar,
+
+    witness: bls::Scalar,
+}
+
+struct BurnProofCommitments<'a, R: darktoken::RngInstance> {
+    params: &'a darktoken::Parameters<R>,
+
+    // Commitments
+    commit: bls::G1Projective,
+}
+
+struct BurnProof {
+    response: bls::Scalar,
+}
+
+impl<'a, R: darktoken::RngInstance> BurnProofBuilder<'a, R> {
+    fn new(params: &'a darktoken::Parameters<R>, serial: &'a bls::Scalar) -> Self {
+        Self {
+            params,
+            serial,
+            witness: params.random_scalar(),
+        }
+    }
+
+    fn commitments(&self) -> Box<dyn darktoken::ProofCommitments + 'a> {
+        Box::new(BurnProofCommitments {
+            params: self.params,
+            commit: self.params.g1 * self.witness,
+        })
+    }
+
+    fn finish(&self, challenge: &bls::Scalar) -> BurnProof {
+        BurnProof {
+            response: self.witness - challenge * self.serial,
+        }
+    }
+}
+
+impl<'a, R: darktoken::RngInstance> darktoken::ProofCommitments for BurnProofCommitments<'a, R> {
+    fn commit(&self, hasher: &mut darktoken::ProofHasher) {
+        hasher.add_g1_affine(&self.params.g1);
+        hasher.add_g1(&self.commit);
+    }
+}
+
+impl BurnProof {
+    fn commitments<'a, R: darktoken::RngInstance>(
+        &self,
+        params: &'a darktoken::Parameters<R>,
+        challenge: &bls::Scalar,
+        burn_value: &bls::G1Projective,
+    ) -> Box<dyn darktoken::ProofCommitments + 'a> {
+        Box::new(BurnProofCommitments {
+            params,
+            commit: burn_value * challenge + params.g1 * self.response,
+        })
+    }
+}
+
+struct Bank<'a> {
+    coconut: darktoken::Coconut<darktoken::OsRngInstance>,
+    verify_key: &'a darktoken::VerifyKey,
+    spent_burns: Vec<bls::G1Projective>,
+}
+
+impl<'a> Bank<'a> {
+    fn new(settings: &CoconutSettings, verify_key: &'a darktoken::VerifyKey) -> Self {
+        Self {
+            coconut: darktoken::Coconut::<darktoken::OsRngInstance>::new(
+                settings.attributes,
+                settings.threshold,
+                settings.total,
+            ),
+            verify_key,
+            spent_burns: Vec::new(),
+        }
+    }
+
+    fn process_withdraw(&mut self, withdraw: WithdrawRequest) -> bool {
+        if self.spent_burns.contains(&withdraw.burn_value) {
+            return false;
+        }
+        // To avoid double spends of the same coin
+        self.spent_burns.push(withdraw.burn_value);
+
+        let burn_commits = withdraw.burn_proof.commitments(
+            &self.coconut.params,
+            &withdraw.credential.challenge,
+            &withdraw.burn_value
+        );
+
+        withdraw.credential.verify(
+            &self.coconut.params,
+            &self.verify_key,
+            &Vec::new(),
+            vec![burn_commits]
+        )
+    }
 }
 
 fn main() {
@@ -143,9 +290,25 @@ fn main() {
 
     let authorities: Vec<_> = (0..settings.total)
         .zip(secret_keys.into_iter())
-        .map(|(i, secret_key)| Authority::new(i as u64, secret_key, &settings))
+        .map(|(i, secret_key)| Authority::new((i + 1) as u64, secret_key, &settings))
         .collect();
 
-    let mut wallet = Wallet::new(&settings);
-    let token = wallet.deposit(110, &authorities);
+    // Normally the authorities, bank and wallet have some form of network protocol
+    // between themselves.
+    let mut bank = Bank::new(&settings, &verify_key);
+
+    let mut wallet = Wallet::new(&settings, &verify_key);
+    let coin_value = 110;
+    let token = wallet.deposit(coin_value, &authorities);
+
+    let withdraw_request = wallet.withdraw(token);
+
+    // Now we serialize withdraw_request ...
+    // ... Send it to the guy holding the money
+    // ... They validate the request. If it works, they process our payout.
+
+    let withdraw_success = bank.process_withdraw(withdraw_request);
+    assert_eq!(withdraw_success, true);
+    println!("Successfully withdrew our token of {} $", coin_value);
 }
+

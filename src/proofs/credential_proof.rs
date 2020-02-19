@@ -55,7 +55,7 @@ impl<'a, R: RngInstance> CredentialProofBuilder<'a, R> {
         &self,
         verify_key: &'a VerifyKey,
         blind_commit_hash: &'a bls::G1Projective,
-    ) -> Box<CredentialProofCommitments<'a, R>> {
+    ) -> Box<dyn ProofCommitments + 'a> {
         assert!(self.witness_kappa.len() <= verify_key.beta.len());
 
         //  w_o G_2 + A + sum(w_k_i B_i)
@@ -117,7 +117,7 @@ impl CredentialProof {
         blind_commit_hash: &'a bls::G1Projective,
         kappa: &bls::G2Projective,
         v: &bls::G1Projective,
-    ) -> Box<CredentialProofCommitments<'a, R>> {
+    ) -> Box<dyn ProofCommitments + 'a> {
         // c K + r_t G2 + (1 - c) A + sum(r_m_i B_i)
         let mut commit_kappa = kappa * challenge
             + params.g2 * self.response_blind

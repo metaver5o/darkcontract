@@ -6,9 +6,10 @@ pub mod parameters;
 pub mod proofs;
 pub mod utility;
 
-pub use crate::bls_extensions::{OsRngInstance, RandomScalar};
+pub use crate::bls_extensions::{OsRngInstance, RandomScalar, RngInstance};
 pub use crate::coconut::coconut::{
-    BlindSignatureRequest, Coconut, PartialSignature, Signature, SecretKey, VerifyKey,
+    BlindSignatureRequest, Coconut, Credential, PartialSignature, SecretKey, Signature, VerifyKey,
 };
 pub use crate::elgamal::{ElGamalPrivateKey, ElGamalPublicKey};
-pub use crate::proofs::proof::ProofCommitments;
+pub use crate::parameters::Parameters;
+pub use crate::proofs::proof::{ProofCommitments, ProofHasher};

@@ -210,12 +210,12 @@ impl<R: RngInstance> Coconut<R> {
         signature
     }
 
-    pub fn make_credential(
+    pub fn make_credential<'b>(
         &self,
         verify_key: &VerifyKey,
         signature: &Signature,
         attributes: &Vec<Attribute>,
-        external_commitments: Vec<Box<dyn ProofCommitments>>,
+        external_commitments: Vec<Box<dyn ProofCommitments + 'b>>,
     ) -> Credential {
         assert!(attributes.len() <= verify_key.beta.len());
 
@@ -344,17 +344,17 @@ pub struct Credential {
     v: bls::G1Projective,
     blind_commit_hash: bls::G1Projective,
     blind_sigma: bls::G1Projective,
-    challenge: bls::Scalar,
+    pub challenge: bls::Scalar,
     proof: CredentialProof,
 }
 
 impl Credential {
-    pub fn verify<R: RngInstance>(
+    pub fn verify<'a, R: RngInstance>(
         &self,
         params: &Parameters<R>,
         verify_key: &VerifyKey,
         public_attributes: &Vec<Attribute>,
-        external_commitments: Vec<Box<dyn ProofCommitments>>,
+        external_commitments: Vec<Box<dyn ProofCommitments + 'a>>,
     ) -> bool {
         let commitments = self.proof.commitments(
             params,

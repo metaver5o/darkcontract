@@ -53,8 +53,10 @@ fn test_multiparty_coconut() {
     let d = ElGamalPrivateKey::new(&coconut.params);
     let gamma = d.to_public();
 
-    let private_attributes = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
-    let public_attributes = vec![bls::Scalar::from(256)];
+    //let private_attributes = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
+    //let public_attributes = vec![bls::Scalar::from(256)];
+    let private_attributes = vec![bls::Scalar::from(110)];
+    let public_attributes = vec![bls::Scalar::from(4), bls::Scalar::from(256)];
 
     let sign_request = coconut.make_blind_sign_request(
         &gamma,
@@ -96,8 +98,10 @@ fn test_multiparty_coconut() {
         sigma: coconut.aggregate(&signature_shares, indexes),
     };
 
-    let private_attributes2 = vec![bls::Scalar::from(110)];
-    let public_attributes2 = vec![bls::Scalar::from(4), bls::Scalar::from(256)];
+    //let private_attributes2 = vec![bls::Scalar::from(110)];
+    //let public_attributes2 = vec![bls::Scalar::from(4), bls::Scalar::from(256)];
+    let private_attributes2 = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
+    let public_attributes2 = vec![bls::Scalar::from(256)];
 
     let credential =
         coconut.make_credential(&verify_key, &signature, &private_attributes2, Vec::new());
