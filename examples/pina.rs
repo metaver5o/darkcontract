@@ -80,10 +80,7 @@ struct WithdrawRequest {
 }
 
 impl<'a> Wallet<'a> {
-    fn new(
-        settings: &CoconutSettings,
-        verify_key: &'a darktoken::VerifyKey,
-    ) -> Self {
+    fn new(settings: &CoconutSettings, verify_key: &'a darktoken::VerifyKey) -> Self {
         Self {
             coconut: darktoken::Coconut::<darktoken::OsRngInstance>::new(
                 settings.attributes,
@@ -172,6 +169,102 @@ impl<'a> Wallet<'a> {
             credential,
         }
     }
+
+    fn token_commit(&self, value: u64, blind: &bls::Scalar) -> bls::G1Projective {
+        assert!(self.coconut.params.hs.len() >= 1);
+
+        self.coconut.params.g1 * bls::Scalar::from(value) + self.coconut.params.hs[0] * blind
+    }
+
+    fn split(
+        &self,
+        token: Token,
+        value1: u64,
+        value2: u64,
+        authorities: &Vec<Authority>,
+    ) -> Result<(Token, Token), &'static str> {
+        assert_eq!(token.value, value1 + value2);
+
+        let burn_value = self.coconut.params.g1 * token.serial;
+
+        let blind1 = self.coconut.params.random_scalar();
+        let blind2 = self.coconut.params.random_scalar();
+        let blind = blind1 + blind2;
+
+        let commit = self.token_commit(token.value, &blind);
+        let commit1 = self.token_commit(value1, &blind1);
+        let commit2 = self.token_commit(value2, &blind2);
+
+        assert_eq!(commit, commit1 + commit2);
+
+        /*
+        let commit_proof_builder = CommitProofBuilder::new(
+            &self.coconut.params,
+            &bls::Scalar::from(token.value),
+            &blind,
+        );
+        let commit1_proof_builder = CommitProofBuilder::new(
+            &self.coconut.params,
+            &bls::Scalar::from(value1),
+            &blind1,
+        );
+        let commit2_proof_builder = CommitProofBuilder::new(
+            &self.coconut.params,
+            &bls::Scalar::from(value2),
+            &blind2,
+        );
+
+        let commit_commitments = commit_proof_builder.commitments();
+        let commit1_commitments = commit1_proof_builder.commitments();
+        let commit2_commitments = commit2_proof_builder.commitments();
+        */
+
+        // TODO: do we have a separate challenge for ProveCred() and each PrepBlindSign() call?
+
+        // Burn a coin ... This code is nearly identical to withdraw()
+        let proof_builder = BurnProofBuilder::new(&self.coconut.params, &token.serial);
+        let commitments = proof_builder.commitments();
+
+        let private_attributes = vec![token.serial, bls::Scalar::from(token.value)];
+
+        let credential = self.coconut.make_credential(
+            self.verify_key,
+            &token.signature,
+            &private_attributes,
+            //vec![commitments, commit_commitments, commit1_commitments, commit2_commitments],
+            vec![commitments],
+        );
+
+        let burn_proof = proof_builder.finish(&credential.challenge);
+        //let commit_proof = commit_proof_builder.finish(&credential.challenge);
+        //let commit1_proof = commit1_proof_builder.finish(&credential.challenge);
+        //let commit2_proof = commit2_proof_builder.finish(&credential.challenge);
+
+        // Mint a coin ... Code is nearly identical to deposit()
+        // these functions call BlindSign()
+        let token1 = self.deposit(value1, authorities);
+        let token2 = self.deposit(value2, authorities);
+
+        // Now authorities process the tokens
+        // TODO: spent burns list contains burn_value
+        if commit != commit1 + commit2 {
+            return Err("commits don't add up");
+        }
+        // pretty similar to process_withdraw()
+        let burn_commitments =
+            burn_proof.commitments(&self.coconut.params, &credential.challenge, &burn_value);
+        if !credential.verify(
+            &self.coconut.params,
+            &self.verify_key,
+            &Vec::new(),
+            vec![burn_commitments],
+        ) {
+            return Err("verify failed");
+        }
+
+        // Unblind token1, token2 and aggregate (already done in call to deposit())
+        Ok((token1, token2))
+    }
 }
 
 struct BurnProofBuilder<'a, R: darktoken::RngInstance> {
@@ -237,6 +330,90 @@ impl BurnProof {
         })
     }
 }
+struct CommitProofBuilder<'a, R: darktoken::RngInstance> {
+    params: &'a darktoken::Parameters<R>,
+
+    // Secrets
+    value: &'a bls::Scalar,
+    blind: &'a bls::Scalar,
+
+    witness_value: bls::Scalar,
+    witness_blind: bls::Scalar,
+}
+
+struct CommitProofCommitments<'a, R: darktoken::RngInstance> {
+    params: &'a darktoken::Parameters<R>,
+
+    // Commitments
+    commit: bls::G1Projective,
+}
+
+struct CommitProof {
+    response_value: bls::Scalar,
+    response_blind: bls::Scalar,
+}
+
+impl<'a, R: darktoken::RngInstance> CommitProofBuilder<'a, R> {
+    fn new(
+        params: &'a darktoken::Parameters<R>,
+        value: &'a bls::Scalar,
+        blind: &'a bls::Scalar,
+    ) -> Self {
+        Self {
+            params,
+            value,
+            blind,
+            witness_value: params.random_scalar(),
+            witness_blind: params.random_scalar(),
+        }
+    }
+
+    fn commitments(&self) -> Box<dyn darktoken::ProofCommitments + 'a> {
+        assert!(self.params.hs.len() > 0);
+        let h1 = self.params.hs[0];
+
+        Box::new(CommitProofCommitments {
+            params: self.params,
+            commit: self.params.g1 * self.witness_value + h1 * self.witness_blind,
+        })
+    }
+
+    fn finish(&self, challenge: &bls::Scalar) -> CommitProof {
+        CommitProof {
+            response_value: self.witness_value - challenge * self.value,
+            response_blind: self.witness_blind - challenge * self.blind,
+        }
+    }
+}
+
+impl<'a, R: darktoken::RngInstance> darktoken::ProofCommitments for CommitProofCommitments<'a, R> {
+    fn commit(&self, hasher: &mut darktoken::ProofHasher) {
+        hasher.add_g1_affine(&self.params.g1);
+        assert!(self.params.hs.len() > 0);
+        let h1 = self.params.hs[0];
+        hasher.add_g1_affine(&h1);
+        hasher.add_g1(&self.commit);
+    }
+}
+
+impl CommitProof {
+    fn commitments<'a, R: darktoken::RngInstance>(
+        &self,
+        params: &'a darktoken::Parameters<R>,
+        challenge: &bls::Scalar,
+        token_commit: &bls::G1Projective,
+    ) -> Box<dyn darktoken::ProofCommitments + 'a> {
+        assert!(params.hs.len() > 0);
+        let h1 = params.hs[0];
+
+        Box::new(CommitProofCommitments {
+            params,
+            commit: token_commit * challenge
+                + params.g1 * self.response_value
+                + h1 * self.response_blind,
+        })
+    }
+}
 
 struct Bank<'a> {
     coconut: darktoken::Coconut<darktoken::OsRngInstance>,
@@ -267,14 +444,14 @@ impl<'a> Bank<'a> {
         let burn_commits = withdraw.burn_proof.commitments(
             &self.coconut.params,
             &withdraw.credential.challenge,
-            &withdraw.burn_value
+            &withdraw.burn_value,
         );
 
         withdraw.credential.verify(
             &self.coconut.params,
             &self.verify_key,
             &Vec::new(),
-            vec![burn_commits]
+            vec![burn_commits],
         )
     }
 }
@@ -297,7 +474,7 @@ fn main() {
     // between themselves.
     let mut bank = Bank::new(&settings, &verify_key);
 
-    let mut wallet = Wallet::new(&settings, &verify_key);
+    let wallet = Wallet::new(&settings, &verify_key);
     let coin_value = 110;
     let token = wallet.deposit(coin_value, &authorities);
 
@@ -310,5 +487,11 @@ fn main() {
     let withdraw_success = bank.process_withdraw(withdraw_request);
     assert_eq!(withdraw_success, true);
     println!("Successfully withdrew our token of {} $", coin_value);
-}
 
+    // Lets now make a new coin and split it
+    let token = wallet.deposit(coin_value, &authorities);
+    match wallet.split(token, 100, 10, &authorities) {
+        Err(err) => eprintln!("error: split failed: {}", err),
+        Ok((token1, token2)) => println!("split worked."),
+    }
+}
