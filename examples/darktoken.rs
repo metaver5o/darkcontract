@@ -1,6 +1,8 @@
 extern crate darktoken;
-use crate::darktoken::RandomScalar;
+use std::path::Path;
 use bls12_381 as bls;
+use clap::{Arg, App, SubCommand};
+use crate::darktoken::RandomScalar;
 
 struct CoconutSettings {
     attributes: u32,
@@ -457,6 +459,62 @@ impl<'a> Bank<'a> {
 }
 
 fn main() {
+    let matches = App::new("darktoken")
+        .version("0.1.0")
+        .author("Amir Taaki <amir@dyne.org>")
+        .about("Issue and manage dark tokens")
+        .arg(Arg::with_name("config")
+            .short("c")
+            .long("config")
+            .takes_value(true)
+            .value_name("CONFIG_DIR")
+            .help("Config directory"))
+        .arg(Arg::with_name("num")
+            .short("n")
+            .long("number")
+            .takes_value(true)
+            .value_name("NUMBER")
+            .help("Five less than favnumb"))
+        .subcommand(SubCommand::with_name("init")
+            .about("Initialize"))
+        .subcommand(SubCommand::with_name("deposit")
+            .about("Deposit money")
+            .arg(Arg::with_name("value")
+                .required(true)
+                .value_name("VALUE")
+                .help("amount to deposit")))
+        .get_matches();
+
+    let default_dir = dirs::home_dir().unwrap().as_path().join(".darktoken/");
+
+    let config_dir = match matches.value_of("config") {
+        None => default_dir.as_path(),
+        Some(path_str) => Path::new(path_str)
+    };
+
+    if !config_dir.exists() {
+        let _ = std::fs::create_dir(config_dir);
+        println!("Initialized new config directory: {}", config_dir.display());
+    }
+
+    match matches.subcommand() {
+        ("init",    Some(matches)) => {
+        },
+        ("deposit", Some(matches)) => {
+            //let matches = matches.
+            let value = matches.value_of("value").unwrap().parse::<i32>().unwrap();
+            println!("Deposit: {:?}", value);
+        },
+        _ => {
+            eprintln!("Invalid subcommand invoked");
+            return;
+        }
+    }
+
+    if let(Some(matches)) = matches.subcommand_matches("deposit") {
+    }
+    return;
+
     let settings = CoconutSettings {
         attributes: 2,
 
