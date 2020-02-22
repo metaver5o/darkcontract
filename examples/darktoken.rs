@@ -1,8 +1,11 @@
+#[macro_use]
+extern crate clap;
 extern crate darktoken;
-use std::path::Path;
 use bls12_381 as bls;
-use clap::{Arg, App, SubCommand};
-use crate::darktoken::RandomScalar;
+use clap::{App, Arg, SubCommand};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 struct CoconutSettings {
     attributes: u32,
@@ -91,6 +94,33 @@ impl<'a> Wallet<'a> {
             ),
             verify_key,
         }
+    }
+
+    fn deposit_new(&self, value: u64) {
+        // Assuming we can deposit the money
+        let private_attributes = vec![self.coconut.params.random_scalar()];
+        let public_attributes = vec![bls::Scalar::from(value)];
+
+        let private_key = darktoken::ElGamalPrivateKey::new(&self.coconut.params);
+        let public_key = private_key.to_public();
+
+        let sign_request = self.coconut.make_blind_sign_request(
+            &public_key,
+            &private_attributes,
+            &public_attributes,
+            Vec::new(),
+        );
+
+        // Issue a new token
+        // Create token file
+        // Status = "process_deposit"
+
+        // /deposit_requests/<id>/request
+        //   sign_request
+        //   public_key
+        //   public_attributes
+        // /deposit_requests/<id>/secret
+        //   private_attributes
     }
 
     fn deposit(&self, value: u64, authorities: &Vec<Authority>) -> Token {
@@ -458,61 +488,194 @@ impl<'a> Bank<'a> {
     }
 }
 
+trait BlsStringConversion {
+    fn to_string(&self) -> String;
+    fn from_string(object: &str) -> Self;
+}
+
+impl BlsStringConversion for bls::Scalar {
+    fn to_string(&self) -> String {
+        hex::encode(self.to_bytes())
+    }
+
+    fn from_string(object: &str) -> Self {
+        Self::one()
+    }
+}
+
+fn from_slice_96(bytes: &[u8]) -> [u8; 96] {
+    let mut array = [0; 96];
+    let bytes = &bytes[..array.len()]; // panics if not enough data
+    array.copy_from_slice(bytes); 
+    array
+}
+
+impl BlsStringConversion for bls::G2Projective {
+    fn to_string(&self) -> String {
+        hex::encode(&bls::G2Affine::from(self).to_compressed().to_vec())
+    }
+
+    fn from_string(object: &str) -> Self {
+        let bytes = from_slice_96(&hex::decode(object).unwrap());
+        bls::G2Affine::from_compressed(&bytes).unwrap().into()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct CoinSettings {
+    attributes: u32,
+    threshold: u32,
+    total: u32,
+    verify_key: (String, Vec<String>),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct SecretKeyObject {
+    x: String,
+    y: Vec<String>,
+}
+
+fn initialize(config_dir: &Path, coin_name: &str, threshold: u32, total: u32) {
+    let settings = CoconutSettings {
+        attributes: 2,
+        threshold,
+        total,
+    };
+    println!("name: {}", coin_name);
+    let (secret_keys, verify_key) = generate_keys(&settings);
+
+    let verify_key_data = (
+        verify_key.alpha.to_string(),
+        verify_key
+            .beta
+            .iter()
+            .map(|beta_i| beta_i.to_string())
+            .collect(),
+    );
+
+    // /coins/<name>
+    //   attributes
+    //   threshold
+    //   total
+    //   verify_key
+    let coin_settings = CoinSettings {
+        attributes: settings.attributes,
+        threshold: settings.threshold,
+        total: settings.total,
+        verify_key: verify_key_data,
+    };
+
+    let coin_settings_data = serde_json::to_string(&coin_settings).unwrap();
+    println!("{}", coin_settings_data);
+
+    let coin_path = config_dir.join("coins").join(coin_name);
+    std::fs::create_dir(&coin_path).unwrap();
+
+    fs::write(coin_path.join("config"), coin_settings_data).unwrap();
+
+    let authority_path = coin_path.join("authority");
+    std::fs::create_dir(&authority_path).unwrap();
+
+    // /coins/authority/n
+    //   secret_key
+    for (i, secret_key) in secret_keys.iter().enumerate() {
+        let object = SecretKeyObject {
+            x: secret_key.x.to_string(),
+            y: secret_key.y.iter().map(|y_i| y_i.to_string()).collect(),
+        };
+
+        let secret_key_data = serde_json::to_string(&object).unwrap();
+        fs::write(authority_path.join(i.to_string()), secret_key_data).unwrap();
+    }
+}
+
+fn load_settings(config_dir: &Path, coin_name: &str) -> (CoconutSettings, darktoken::VerifyKey) {
+    let config_path = config_dir.join("coins").join(coin_name).join("config");
+
+    let config_data = fs::read_to_string(config_path).unwrap();
+
+    let object: CoinSettings = serde_json::from_str(&config_data).unwrap();
+
+    let settings = CoconutSettings {
+        attributes: object.attributes,
+        threshold: object.threshold,
+        total: object.total,
+    };
+
+    let verify_key = darktoken::VerifyKey {
+        alpha: bls::G2Projective::from_string(&object.verify_key.0),
+        beta: object
+            .verify_key
+            .1
+            .iter()
+            .map(|beta_i| bls::G2Projective::from_string(beta_i))
+            .collect(),
+    };
+
+    (settings, verify_key)
+}
+
+fn deposit(config_dir: &Path, coin_name: &str, value: u64) {
+    let (settings, verify_key) = load_settings(config_dir, coin_name);
+    let wallet = Wallet::new(&settings, &verify_key);
+    println!("Deposit: {:?}", value);
+}
+
 fn main() {
-    let matches = App::new("darktoken")
-        .version("0.1.0")
-        .author("Amir Taaki <amir@dyne.org>")
-        .about("Issue and manage dark tokens")
-        .arg(Arg::with_name("config")
-            .short("c")
-            .long("config")
-            .takes_value(true)
-            .value_name("CONFIG_DIR")
-            .help("Config directory"))
-        .arg(Arg::with_name("num")
-            .short("n")
-            .long("number")
-            .takes_value(true)
-            .value_name("NUMBER")
-            .help("Five less than favnumb"))
-        .subcommand(SubCommand::with_name("init")
-            .about("Initialize"))
-        .subcommand(SubCommand::with_name("deposit")
-            .about("Deposit money")
-            .arg(Arg::with_name("value")
-                .required(true)
-                .value_name("VALUE")
-                .help("amount to deposit")))
-        .get_matches();
+    let matches = clap_app!(darktoken =>
+        (version: "0.1.0")
+        (author: "Amir Taaki <amir@dyne.org>")
+        (about: "Issue and manage dark tokens")
+        (@arg CONFIG: -c --config +takes_value "Sets the config directory")
+        (@subcommand init =>
+            (about: "Initialize")
+            (@arg NAME: +required "Name of the coin")
+            (@arg THRESHOLD: +required "Threshold out of N")
+            (@arg TOTAL: +required "N total authorities")
+        )
+        (@subcommand deposit =>
+            (about: "Deposit money")
+            (@arg NAME: +required "Name of the coin")
+            (@arg VALUE: +required "Amount to deposit")
+        )
+    ).get_matches();
 
     let default_dir = dirs::home_dir().unwrap().as_path().join(".darktoken/");
 
-    let config_dir = match matches.value_of("config") {
+    let config_dir = match matches.value_of("CONFIG") {
         None => default_dir.as_path(),
-        Some(path_str) => Path::new(path_str)
+        Some(path_str) => Path::new(path_str),
     };
 
     if !config_dir.exists() {
-        let _ = std::fs::create_dir(config_dir);
+        let _ = std::fs::create_dir(config_dir).unwrap();
+        let _ = std::fs::create_dir(config_dir.join("coins")).unwrap();
         println!("Initialized new config directory: {}", config_dir.display());
     }
 
     match matches.subcommand() {
-        ("init",    Some(matches)) => {
-        },
+        ("init", Some(matches)) => {
+            let coin_name = matches.value_of("NAME").unwrap();
+            let threshold = matches
+                .value_of("THRESHOLD")
+                .unwrap()
+                .parse::<u32>()
+                .unwrap();
+            let total = matches.value_of("TOTAL").unwrap().parse::<u32>().unwrap();
+            initialize(&config_dir, &coin_name, threshold, total);
+        }
         ("deposit", Some(matches)) => {
             //let matches = matches.
-            let value = matches.value_of("value").unwrap().parse::<i32>().unwrap();
-            println!("Deposit: {:?}", value);
-        },
+            let coin_name = matches.value_of("NAME").unwrap();
+            let value = matches.value_of("VALUE").unwrap().parse::<u64>().unwrap();
+            deposit(&config_dir, &coin_name, value);
+        }
         _ => {
             eprintln!("Invalid subcommand invoked");
             return;
         }
     }
 
-    if let(Some(matches)) = matches.subcommand_matches("deposit") {
-    }
     return;
 
     let settings = CoconutSettings {
