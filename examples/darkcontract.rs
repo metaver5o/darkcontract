@@ -847,10 +847,10 @@ fn list_tokens(config_dir: &Path, coin_name: &str) {
 }
 
 fn main() {
-    let matches = clap_app!(darktoken =>
+    let matches = clap_app!(darkcontract =>
         (version: "0.1.0")
         (author: "Amir Taaki <amir@dyne.org>")
-        (about: "Issue and manage dark tokens")
+        (about: "Issue and manage dark contracts")
         (@arg CONFIG: -c --config +takes_value "Sets the config directory")
         (@subcommand init =>
             (about: "Initialize")
