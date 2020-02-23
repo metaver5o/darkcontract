@@ -689,17 +689,7 @@ struct TokenObject {
     private_key: String,
 }
 
-fn deposit(config_dir: &Path, coin_name: &str, value: u64) {
-    let (settings, verify_key) = load_settings(config_dir, coin_name);
-    let wallet = Wallet::new(&settings, &verify_key);
-    println!("Deposit: {:?}", value);
-
-    let authorities: Vec<_> = (0..settings.total)
-        .map(|i| load_authority(config_dir, coin_name, i, &settings))
-        .collect();
-
-    let token = wallet.deposit(value, &authorities);
-
+fn save_token(config_dir: &Path, coin_name: &str, token: &Token) {
     let object = TokenObject {
         value: token.value,
         serial: token.serial.to_string(),
@@ -723,6 +713,45 @@ fn deposit(config_dir: &Path, coin_name: &str, value: u64) {
     println!("Issued new token {}", token_id);
 }
 
+fn deposit(config_dir: &Path, coin_name: &str, value: u64) {
+    let (settings, verify_key) = load_settings(config_dir, coin_name);
+    let wallet = Wallet::new(&settings, &verify_key);
+    println!("Deposit: {:?}", value);
+
+    let authorities: Vec<_> = (0..settings.total)
+        .map(|i| load_authority(config_dir, coin_name, i, &settings))
+        .collect();
+
+    let token = wallet.deposit(value, &authorities);
+
+    save_token(config_dir, coin_name, &token);
+}
+
+fn load_token<'a>(
+    token_path: &Path,
+    params: &'a darktoken::Parameters<darktoken::OsRngInstance>,
+) -> Token<'a> {
+    let token_data = fs::read_to_string(&token_path).unwrap();
+    let object: TokenObject = serde_json::from_str(&token_data).unwrap();
+
+    let signature = darktoken::Signature {
+        commit_hash: bls::G1Projective::from_string(&object.signature.0),
+        sigma: bls::G1Projective::from_string(&object.signature.1),
+    };
+
+    let private_key = darktoken::ElGamalPrivateKey {
+        params,
+        private_key: bls::Scalar::from_string(&object.private_key),
+    };
+
+    Token {
+        value: object.value,
+        serial: bls::Scalar::from_string(&object.serial),
+        signature,
+        private_key,
+    }
+}
+
 fn withdraw(config_dir: &Path, coin_name: &str, token_id: &str) {
     let (settings, verify_key) = load_settings(config_dir, coin_name);
     let mut bank = Bank::new(&settings, &verify_key);
@@ -733,29 +762,15 @@ fn withdraw(config_dir: &Path, coin_name: &str, token_id: &str) {
         .join(coin_name)
         .join("tokens")
         .join(&token_id);
-    let token_data = fs::read_to_string(&token_path).unwrap();
-    let object: TokenObject = serde_json::from_str(&token_data).unwrap();
-
-    let signature = darktoken::Signature {
-        commit_hash: bls::G1Projective::from_string(&object.signature.0),
-        sigma: bls::G1Projective::from_string(&object.signature.1),
-    };
-
-    let private_key = darktoken::ElGamalPrivateKey {
-        params: &wallet.coconut.params,
-        private_key: bls::Scalar::from_string(&object.private_key),
-    };
-
-    let token = Token {
-        value: object.value,
-        serial: bls::Scalar::from_string(&object.serial),
-        signature,
-        private_key,
-    };
+    let token = load_token(&token_path, &wallet.coconut.params);
 
     let withdraw_request = wallet.withdraw(token);
     let withdraw_success = bank.process_withdraw(withdraw_request);
-    let withdraw_status = if withdraw_success { "success" } else { "failed" };
+    let withdraw_status = if withdraw_success {
+        "success"
+    } else {
+        "failed"
+    };
 
     println!("Withdraw status: {}", withdraw_status);
 
@@ -763,6 +778,72 @@ fn withdraw(config_dir: &Path, coin_name: &str, token_id: &str) {
         println!("Token burnt.");
         fs::remove_file(&token_path);
     }
+}
+
+fn split(config_dir: &Path, coin_name: &str, token_id: &str, value1: u64, value2: u64) {
+    let (settings, verify_key) = load_settings(config_dir, coin_name);
+    let wallet = Wallet::new(&settings, &verify_key);
+
+    let authorities: Vec<_> = (0..settings.total)
+        .map(|i| load_authority(config_dir, coin_name, i, &settings))
+        .collect();
+
+    let token_path = config_dir
+        .join("coins")
+        .join(coin_name)
+        .join("tokens")
+        .join(&token_id);
+    let token = load_token(&token_path, &wallet.coconut.params);
+
+    if token.value != value1 + value2 {
+        eprintln!("error: split amounts do not equal token value.");
+        return;
+    }
+
+    let token_id = token.id_string();
+    match wallet.split(token, value1, value2, &authorities) {
+        Err(err) => eprintln!("error: split failed: {}", err),
+        Ok((token1, token2)) => {
+            fs::remove_file(&token_path);
+            println!("Burnt token {}", token_id);
+            save_token(config_dir, coin_name, &token1);
+            save_token(config_dir, coin_name, &token2);
+        }
+    }
+}
+
+fn token_info(config_dir: &Path, coin_name: &str, token_id: &str) {
+    let (settings, verify_key) = load_settings(config_dir, coin_name);
+    let wallet = Wallet::new(&settings, &verify_key);
+
+    let token_path = config_dir
+        .join("coins")
+        .join(coin_name)
+        .join("tokens")
+        .join(&token_id);
+    let token = load_token(&token_path, &wallet.coconut.params);
+
+    println!("Token value: {}", token.value);
+}
+
+fn list_tokens(config_dir: &Path, coin_name: &str) {
+    let (settings, verify_key) = load_settings(config_dir, coin_name);
+    let wallet = Wallet::new(&settings, &verify_key);
+
+    let tokens_path = config_dir
+        .join("coins")
+        .join(coin_name)
+        .join("tokens");
+
+    let paths = fs::read_dir(tokens_path).unwrap();
+    for path in paths {
+        let token_path = path.unwrap().path();
+        println!("{}", token_path.file_name().unwrap().to_str().unwrap());
+        let token = load_token(&token_path, &wallet.coconut.params);
+        println!("  Token value: {}", token.value);
+    }
+
+    //println!("Token value: {}", token.value);
 }
 
 fn main() {
@@ -786,6 +867,22 @@ fn main() {
             (about: "Withdraw token")
             (@arg NAME: +required "Name of the coin")
             (@arg TOKEN_ID: +required "Token ID")
+        )
+        (@subcommand split =>
+            (about: "Split token")
+            (@arg NAME: +required "Name of the coin")
+            (@arg TOKEN_ID: +required "Token ID")
+            (@arg VALUE1: +required "Amount 1")
+            (@arg VALUE2: +required "Amount 2")
+        )
+        (@subcommand token_info =>
+            (about: "Show info about a token")
+            (@arg NAME: +required "Name of the coin")
+            (@arg TOKEN_ID: +required "Token ID")
+        )
+        (@subcommand list_tokens =>
+            (about: "Show list of issued tokens")
+            (@arg NAME: +required "Name of the coin")
         )
     )
     .get_matches();
@@ -824,6 +921,22 @@ fn main() {
             let coin_name = matches.value_of("NAME").unwrap();
             let token_id = matches.value_of("TOKEN_ID").unwrap();
             withdraw(&config_dir, &coin_name, &token_id);
+        }
+        ("split", Some(matches)) => {
+            let coin_name = matches.value_of("NAME").unwrap();
+            let token_id = matches.value_of("TOKEN_ID").unwrap();
+            let value1 = matches.value_of("VALUE1").unwrap().parse::<u64>().unwrap();
+            let value2 = matches.value_of("VALUE2").unwrap().parse::<u64>().unwrap();
+            split(&config_dir, &coin_name, &token_id, value1, value2);
+        }
+        ("token_info", Some(matches)) => {
+            let coin_name = matches.value_of("NAME").unwrap();
+            let token_id = matches.value_of("TOKEN_ID").unwrap();
+            token_info(&config_dir, &coin_name, &token_id);
+        }
+        ("list_tokens", Some(matches)) => {
+            let coin_name = matches.value_of("NAME").unwrap();
+            list_tokens(&config_dir, &coin_name);
         }
         _ => {
             eprintln!("Invalid subcommand invoked");
