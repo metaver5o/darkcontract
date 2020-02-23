@@ -1,11 +1,12 @@
 #[macro_use]
 extern crate clap;
 extern crate darktoken;
+use std::fs;
+use std::path::Path;
 use bls12_381 as bls;
 use clap::{App, Arg, SubCommand};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::Path;
+use sha2::Digest;
 
 struct CoconutSettings {
     attributes: u32,
@@ -71,6 +72,14 @@ struct Token<'a> {
     serial: bls::Scalar,
     signature: darktoken::Signature,
     private_key: darktoken::ElGamalPrivateKey<'a, darktoken::OsRngInstance>,
+}
+
+impl<'a> Token<'a> {
+    fn id_string(&self) -> String {
+        let bytes = self.serial.to_bytes();
+        let hash = sha2::Sha256::digest(&bytes);
+        hex::encode(&hash)
+    }
 }
 
 struct Wallet<'a> {
@@ -694,10 +703,13 @@ fn deposit(config_dir: &Path, coin_name: &str, value: u64) {
         private_key: token.private_key.private_key.to_string()
     };
 
-    let token_path = config_dir.join("coins").join(coin_name).join("tokens").join("xxx");
+    let token_id = token.id_string();
+    let token_path = config_dir.join("coins").join(coin_name).join("tokens").join(&token_id);
 
     let token_data = serde_json::to_string(&object).unwrap();
     fs::write(token_path, token_data).unwrap();
+
+    println!("Issued new token {}", token_id);
 }
 
 fn main() {
