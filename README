@@ -5,9 +5,9 @@ Originally pairing library, now renamed to bls12_381
 
 To run the example tool:
 
-  $ git clone https://github.com/narodnik/darktoken
-  $ cd darktoken
+  $ git clone https://github.com/narodnik/darkcontract
+  $ cd darkcontract
   $ cargo build --examples
   $ cd target/debug/examples/
-  $ ./darktoken help
+  $ ./darkcontract help
 
