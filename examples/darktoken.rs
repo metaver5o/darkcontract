@@ -493,20 +493,46 @@ trait BlsStringConversion {
     fn from_string(object: &str) -> Self;
 }
 
+fn from_slice_32(bytes: &[u8]) -> [u8; 32] {
+    let mut array = [0; 32];
+    let bytes = &bytes[..array.len()]; // panics if not enough data
+    array.copy_from_slice(bytes);
+    array
+}
+
 impl BlsStringConversion for bls::Scalar {
     fn to_string(&self) -> String {
         hex::encode(self.to_bytes())
     }
 
     fn from_string(object: &str) -> Self {
-        Self::one()
+        let bytes = from_slice_32(&hex::decode(object).unwrap());
+        Self::from_bytes(&bytes).unwrap()
+    }
+}
+
+fn from_slice_48(bytes: &[u8]) -> [u8; 48] {
+    let mut array = [0; 48];
+    let bytes = &bytes[..array.len()]; // panics if not enough data
+    array.copy_from_slice(bytes);
+    array
+}
+
+impl BlsStringConversion for bls::G1Projective {
+    fn to_string(&self) -> String {
+        hex::encode(&bls::G1Affine::from(self).to_compressed().to_vec())
+    }
+
+    fn from_string(object: &str) -> Self {
+        let bytes = from_slice_48(&hex::decode(object).unwrap());
+        bls::G1Affine::from_compressed(&bytes).unwrap().into()
     }
 }
 
 fn from_slice_96(bytes: &[u8]) -> [u8; 96] {
     let mut array = [0; 96];
     let bytes = &bytes[..array.len()]; // panics if not enough data
-    array.copy_from_slice(bytes); 
+    array.copy_from_slice(bytes);
     array
 }
 
@@ -576,6 +602,9 @@ fn initialize(config_dir: &Path, coin_name: &str, threshold: u32, total: u32) {
     let authority_path = coin_path.join("authority");
     std::fs::create_dir(&authority_path).unwrap();
 
+    let tokens_path = coin_path.join("tokens");
+    std::fs::create_dir(&tokens_path).unwrap();
+
     // /coins/authority/n
     //   secret_key
     for (i, secret_key) in secret_keys.iter().enumerate() {
@@ -615,10 +644,60 @@ fn load_settings(config_dir: &Path, coin_name: &str) -> (CoconutSettings, darkto
     (settings, verify_key)
 }
 
+fn load_authority(
+    config_dir: &Path,
+    coin_name: &str,
+    authority_index: u32,
+    settings: &CoconutSettings,
+) -> Authority {
+    let authority_path = config_dir
+        .join("coins")
+        .join(coin_name)
+        .join("authority")
+        .join(authority_index.to_string());
+
+    let authority_data = fs::read_to_string(authority_path).unwrap();
+
+    let object: SecretKeyObject = serde_json::from_str(&authority_data).unwrap();
+
+    let secret_key = darktoken::SecretKey {
+        x: bls::Scalar::from_string(&object.x),
+        y: object.y.iter().map(|y_i| bls::Scalar::from_string(y_i)).collect()
+    };
+
+    Authority::new((authority_index + 1) as u64, secret_key, &settings)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct TokenObject {
+    value: u64,
+    serial: String,
+    signature: (String, String),
+    private_key: String
+}
+
 fn deposit(config_dir: &Path, coin_name: &str, value: u64) {
     let (settings, verify_key) = load_settings(config_dir, coin_name);
     let wallet = Wallet::new(&settings, &verify_key);
     println!("Deposit: {:?}", value);
+
+    let authorities: Vec<_> = (0..settings.total)
+        .map(|i| load_authority(config_dir, coin_name, i, &settings))
+        .collect();
+
+    let token = wallet.deposit(value, &authorities);
+
+    let object = TokenObject {
+        value: token.value,
+        serial: token.serial.to_string(),
+        signature: (token.signature.commit_hash.to_string(), token.signature.sigma.to_string()),
+        private_key: token.private_key.private_key.to_string()
+    };
+
+    let token_path = config_dir.join("coins").join(coin_name).join("tokens").join("xxx");
+
+    let token_data = serde_json::to_string(&object).unwrap();
+    fs::write(token_path, token_data).unwrap();
 }
 
 fn main() {
@@ -638,7 +717,8 @@ fn main() {
             (@arg NAME: +required "Name of the coin")
             (@arg VALUE: +required "Amount to deposit")
         )
-    ).get_matches();
+    )
+    .get_matches();
 
     let default_dir = dirs::home_dir().unwrap().as_path().join(".darktoken/");
 
@@ -675,6 +755,8 @@ fn main() {
             return;
         }
     }
+
+    // /coins/token
 
     return;
 
