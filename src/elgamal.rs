@@ -6,7 +6,7 @@ use crate::parameters::*;
 pub type EncryptedValue = (bls::G1Projective, bls::G1Projective);
 
 pub struct ElGamalPrivateKey<'a, R: RngInstance> {
-    params: &'a Parameters<R>,
+    pub params: &'a Parameters<R>,
     pub private_key: bls::Scalar,
 }
 
