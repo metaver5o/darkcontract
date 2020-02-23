@@ -576,7 +576,6 @@ fn initialize(config_dir: &Path, coin_name: &str, threshold: u32, total: u32) {
         threshold,
         total,
     };
-    println!("name: {}", coin_name);
     let (secret_keys, verify_key) = generate_keys(&settings);
 
     let verify_key_data = (
@@ -601,7 +600,6 @@ fn initialize(config_dir: &Path, coin_name: &str, threshold: u32, total: u32) {
     };
 
     let coin_settings_data = serde_json::to_string(&coin_settings).unwrap();
-    println!("{}", coin_settings_data);
 
     let coin_path = config_dir.join("coins").join(coin_name);
     std::fs::create_dir(&coin_path).unwrap();
@@ -625,6 +623,8 @@ fn initialize(config_dir: &Path, coin_name: &str, threshold: u32, total: u32) {
         let secret_key_data = serde_json::to_string(&object).unwrap();
         fs::write(authority_path.join(i.to_string()), secret_key_data).unwrap();
     }
+
+    println!("Created: {}", coin_name);
 }
 
 fn load_settings(config_dir: &Path, coin_name: &str) -> (CoconutSettings, darktoken::VerifyKey) {

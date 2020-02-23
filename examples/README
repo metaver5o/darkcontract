@@ -16,7 +16,7 @@ See command specific help:
 
 3. List tokens belonging to our currency.
 
-  $ darktoken list_tokens
+  $ darktoken list_tokens xcoin
 
 4. Split our token into two new tokens.
 
