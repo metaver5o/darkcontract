@@ -12,12 +12,12 @@ use crate::proofs::proof::*;
 use crate::proofs::signature_proof::*;
 
 #[allow(dead_code)]
-struct TestValues<'a, R: RngInstance> {
+struct TestValues {
     private_attributes: Vec<bls::Scalar>,
     public_attributes: Vec<bls::Scalar>,
     attribute_keys: Vec<bls::Scalar>,
     blinding_factor: bls::Scalar,
-    gamma: ElGamalPublicKey<'a, R>,
+    gamma: ElGamalPublicKey,
     attribute_commit: bls::G1Projective,
     commit_hash: bls::G1Projective,
     ciphertext: Vec<EncryptedValue>,
@@ -28,9 +28,9 @@ struct TestValues<'a, R: RngInstance> {
     v: bls::G1Projective,
 }
 
-impl<'a, R: RngInstance> TestValues<'a, R> {
+impl TestValues {
     #[allow(dead_code)]
-    fn setup(params: &'a Parameters<R>) -> Self {
+    fn setup<R: RngInstance>(params: &Parameters<R>) -> Self {
         Self {
             private_attributes: vec![bls::Scalar::from(110), bls::Scalar::from(4)],
             //public_attributes: vec![bls::Scalar::from(256)],
@@ -58,7 +58,6 @@ impl<'a, R: RngInstance> TestValues<'a, R> {
             .unwrap(),
 
             gamma: ElGamalPublicKey {
-                params: &params,
                 public_key: bls::G1Projective::from(
                     bls::G1Affine::from_compressed(&[
                         0xb6, 0xdf, 0x9e, 0x19, 0xbd, 0xca, 0x01, 0xb9, 0x67, 0xe4, 0xf6, 0xff,

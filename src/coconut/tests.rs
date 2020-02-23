@@ -51,7 +51,7 @@ fn test_multiparty_coconut() {
     let verify_key = coconut.aggregate_keys(&verify_keys);
 
     let d = ElGamalPrivateKey::new(&coconut.params);
-    let gamma = d.to_public();
+    let gamma = d.to_public(&coconut.params);
 
     //let private_attributes = vec![bls::Scalar::from(110), bls::Scalar::from(4)];
     //let public_attributes = vec![bls::Scalar::from(256)];

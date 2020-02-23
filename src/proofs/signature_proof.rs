@@ -24,7 +24,7 @@ pub struct SignatureProofBuilder<'a, R: RngInstance> {
 pub struct SignatureProofCommitments<'a, R: RngInstance> {
     // Base points
     params: &'a Parameters<R>,
-    gamma: &'a ElGamalPublicKey<'a, R>,
+    gamma: &'a ElGamalPublicKey,
     commit_hash: &'a bls::G1Projective,
 
     // This value is hashed in the challenge in coconut ref impl. We do the same here.
@@ -72,7 +72,7 @@ impl<'a, R: RngInstance> SignatureProofBuilder<'a, R> {
 
     pub fn commitments(
         &self,
-        gamma: &'a ElGamalPublicKey<'a, R>,
+        gamma: &'a ElGamalPublicKey,
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
     ) -> Box<SignatureProofCommitments<'a, R>> {
@@ -155,7 +155,7 @@ impl SignatureProof {
         &self,
         params: &'a Parameters<R>,
         challenge: &bls::Scalar,
-        gamma: &'a ElGamalPublicKey<'a, R>,
+        gamma: &'a ElGamalPublicKey,
         commit_hash: &'a bls::G1Projective,
         attribute_commit: &'a bls::G1Projective,
         ciphertexts: &Vec<EncryptedValue>,

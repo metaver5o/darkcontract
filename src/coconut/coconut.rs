@@ -29,7 +29,7 @@ pub struct PartialSignature {
 }
 
 impl PartialSignature {
-    pub fn unblind<R: RngInstance>(&self, private_key: &ElGamalPrivateKey<R>) -> SignatureShare {
+    pub fn unblind(&self, private_key: &ElGamalPrivateKey) -> SignatureShare {
         private_key.decrypt(&self.encrypted_value)
     }
 }
@@ -134,7 +134,7 @@ impl<R: RngInstance> Coconut<R> {
 
     pub fn make_blind_sign_request<'a>(
         &self,
-        shared_attribute_key: &'a ElGamalPublicKey<R>,
+        shared_attribute_key: &'a ElGamalPublicKey,
         private_attributes: &'a Vec<Attribute>,
         public_attributes: &'a Vec<Attribute>,
         external_commitments: Vec<Box<dyn ProofCommitments>>,
@@ -161,7 +161,9 @@ impl<R: RngInstance> Coconut<R> {
             .collect();
 
         let encrypted_attributes: Vec<(_, _)> = izip!(private_attributes, &attribute_keys)
-            .map(|(attribute, key)| shared_attribute_key.encrypt(&attribute, &key, &commit_hash))
+            .map(|(attribute, key)| {
+                shared_attribute_key.encrypt(&self.params, &attribute, &key, &commit_hash)
+            })
             .collect();
 
         // Construct proof
@@ -279,7 +281,7 @@ impl BlindSignatureRequest {
         &self,
         params: &Parameters<R>,
         secret_key: &SecretKey,
-        shared_attribute_key: &ElGamalPublicKey<R>,
+        shared_attribute_key: &ElGamalPublicKey,
         public_attributes: &Vec<Attribute>,
         external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> Result<PartialSignature, &'static str> {

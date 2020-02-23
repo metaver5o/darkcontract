@@ -5,28 +5,24 @@ use crate::parameters::*;
 
 pub type EncryptedValue = (bls::G1Projective, bls::G1Projective);
 
-pub struct ElGamalPrivateKey<'a, R: RngInstance> {
-    pub params: &'a Parameters<R>,
+pub struct ElGamalPrivateKey {
     pub private_key: bls::Scalar,
 }
 
-pub struct ElGamalPublicKey<'a, R: RngInstance> {
-    pub params: &'a Parameters<R>,
+pub struct ElGamalPublicKey {
     pub public_key: bls::G1Projective,
 }
 
-impl<'a, R: RngInstance> ElGamalPrivateKey<'a, R> {
-    pub fn new(params: &'a Parameters<R>) -> Self {
+impl ElGamalPrivateKey {
+    pub fn new<R: RngInstance>(params: &Parameters<R>) -> Self {
         Self {
-            params: params,
             private_key: params.random_scalar(),
         }
     }
 
-    pub fn to_public(&self) -> ElGamalPublicKey<'a, R> {
+    pub fn to_public<R: RngInstance>(&self, params: &Parameters<R>) -> ElGamalPublicKey {
         ElGamalPublicKey {
-            params: self.params,
-            public_key: self.params.g1 * self.private_key,
+            public_key: params.g1 * self.private_key,
         }
     }
 
@@ -36,15 +32,16 @@ impl<'a, R: RngInstance> ElGamalPrivateKey<'a, R> {
     }
 }
 
-impl<'a, R: RngInstance> ElGamalPublicKey<'a, R> {
-    pub fn encrypt(
+impl ElGamalPublicKey {
+    pub fn encrypt<R: RngInstance>(
         &self,
+        params: &Parameters<R>,
         attribute: &bls::Scalar,
         attribute_key: &bls::Scalar,
         shared_value: &bls::G1Projective,
     ) -> EncryptedValue {
         (
-            self.params.g1 * attribute_key,
+            params.g1 * attribute_key,
             self.public_key * attribute_key + shared_value * attribute,
         )
     }

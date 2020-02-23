@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate clap;
-extern crate darktoken;
+extern crate darkcontract;
 use bls12_381 as bls;
 use clap::{App, Arg, SubCommand};
 use serde::{Deserialize, Serialize};
@@ -16,17 +16,17 @@ struct CoconutSettings {
 
 struct Authority {
     index: u64,
-    secret_key: darktoken::SecretKey,
-    coconut: darktoken::Coconut<darktoken::OsRngInstance>,
+    secret_key: darkcontract::SecretKey,
+    coconut: darkcontract::Coconut<darkcontract::OsRngInstance>,
 }
 
 impl Authority {
-    fn new(index: u64, secret_key: darktoken::SecretKey, settings: &CoconutSettings) -> Self {
+    fn new(index: u64, secret_key: darkcontract::SecretKey, settings: &CoconutSettings) -> Self {
         Self {
             index,
             secret_key,
 
-            coconut: darktoken::Coconut::<darktoken::OsRngInstance>::new(
+            coconut: darkcontract::Coconut::<darkcontract::OsRngInstance>::new(
                 settings.attributes,
                 settings.threshold,
                 settings.total,
@@ -34,13 +34,13 @@ impl Authority {
         }
     }
 
-    fn blind_sign<'a>(
+    fn blind_sign(
         &self,
-        sign_request: &darktoken::BlindSignatureRequest,
-        public_key: &darktoken::ElGamalPublicKey<'a, darktoken::OsRngInstance>,
+        sign_request: &darkcontract::BlindSignatureRequest,
+        public_key: &darkcontract::ElGamalPublicKey,
         public_attributes: &Vec<bls::Scalar>,
-        external_commitments: Vec<Box<dyn darktoken::ProofCommitments>>,
-    ) -> darktoken::PartialSignature {
+        external_commitments: Vec<Box<dyn darkcontract::ProofCommitments>>,
+    ) -> darkcontract::PartialSignature {
         sign_request
             .blind_sign(
                 &self.coconut.params,
@@ -53,8 +53,10 @@ impl Authority {
     }
 }
 
-fn generate_keys(settings: &CoconutSettings) -> (Vec<darktoken::SecretKey>, darktoken::VerifyKey) {
-    let coconut = darktoken::Coconut::<darktoken::OsRngInstance>::new(
+fn generate_keys(
+    settings: &CoconutSettings,
+) -> (Vec<darkcontract::SecretKey>, darkcontract::VerifyKey) {
+    let coconut = darkcontract::Coconut::<darkcontract::OsRngInstance>::new(
         settings.attributes,
         settings.threshold,
         settings.total,
@@ -67,14 +69,14 @@ fn generate_keys(settings: &CoconutSettings) -> (Vec<darktoken::SecretKey>, dark
     (secret_keys, verify_key)
 }
 
-struct Token<'a> {
+struct Token {
     value: u64,
     serial: bls::Scalar,
-    signature: darktoken::Signature,
-    private_key: darktoken::ElGamalPrivateKey<'a, darktoken::OsRngInstance>,
+    signature: darkcontract::Signature,
+    private_key: darkcontract::ElGamalPrivateKey,
 }
 
-impl<'a> Token<'a> {
+impl Token {
     fn id_string(&self) -> String {
         let bytes = self.serial.to_bytes();
         let hash = sha2::Sha256::digest(&bytes);
@@ -83,20 +85,20 @@ impl<'a> Token<'a> {
 }
 
 struct Wallet<'a> {
-    coconut: darktoken::Coconut<darktoken::OsRngInstance>,
-    verify_key: &'a darktoken::VerifyKey,
+    coconut: darkcontract::Coconut<darkcontract::OsRngInstance>,
+    verify_key: &'a darkcontract::VerifyKey,
 }
 
 struct WithdrawRequest {
     burn_value: bls::G1Projective,
     burn_proof: BurnProof,
-    credential: darktoken::Credential,
+    credential: darkcontract::Credential,
 }
 
 impl<'a> Wallet<'a> {
-    fn new(settings: &CoconutSettings, verify_key: &'a darktoken::VerifyKey) -> Self {
+    fn new(settings: &CoconutSettings, verify_key: &'a darkcontract::VerifyKey) -> Self {
         Self {
-            coconut: darktoken::Coconut::<darktoken::OsRngInstance>::new(
+            coconut: darkcontract::Coconut::<darkcontract::OsRngInstance>::new(
                 settings.attributes,
                 settings.threshold,
                 settings.total,
@@ -110,8 +112,8 @@ impl<'a> Wallet<'a> {
         let private_attributes = vec![self.coconut.params.random_scalar()];
         let public_attributes = vec![bls::Scalar::from(value)];
 
-        let private_key = darktoken::ElGamalPrivateKey::new(&self.coconut.params);
-        let public_key = private_key.to_public();
+        let private_key = darkcontract::ElGamalPrivateKey::new(&self.coconut.params);
+        let public_key = private_key.to_public(&self.coconut.params);
 
         let sign_request = self.coconut.make_blind_sign_request(
             &public_key,
@@ -137,8 +139,8 @@ impl<'a> Wallet<'a> {
         let private_attributes = vec![self.coconut.params.random_scalar()];
         let public_attributes = vec![bls::Scalar::from(value)];
 
-        let private_key = darktoken::ElGamalPrivateKey::new(&self.coconut.params);
-        let public_key = private_key.to_public();
+        let private_key = darkcontract::ElGamalPrivateKey::new(&self.coconut.params);
+        let public_key = private_key.to_public(&self.coconut.params);
 
         let sign_request = self.coconut.make_blind_sign_request(
             &public_key,
@@ -167,7 +169,7 @@ impl<'a> Wallet<'a> {
         let (indexes, shares): (Vec<_>, Vec<_>) = indexed_shares.into_iter().unzip();
 
         let commit_hash = sign_request.compute_commit_hash();
-        let signature = darktoken::Signature {
+        let signature = darkcontract::Signature {
             commit_hash,
             sigma: self.coconut.aggregate(&shares, indexes),
         };
@@ -308,8 +310,8 @@ impl<'a> Wallet<'a> {
     }
 }
 
-struct BurnProofBuilder<'a, R: darktoken::RngInstance> {
-    params: &'a darktoken::Parameters<R>,
+struct BurnProofBuilder<'a, R: darkcontract::RngInstance> {
+    params: &'a darkcontract::Parameters<R>,
 
     // Secrets
     serial: &'a bls::Scalar,
@@ -317,8 +319,8 @@ struct BurnProofBuilder<'a, R: darktoken::RngInstance> {
     witness: bls::Scalar,
 }
 
-struct BurnProofCommitments<'a, R: darktoken::RngInstance> {
-    params: &'a darktoken::Parameters<R>,
+struct BurnProofCommitments<'a, R: darkcontract::RngInstance> {
+    params: &'a darkcontract::Parameters<R>,
 
     // Commitments
     commit: bls::G1Projective,
@@ -328,8 +330,8 @@ struct BurnProof {
     response: bls::Scalar,
 }
 
-impl<'a, R: darktoken::RngInstance> BurnProofBuilder<'a, R> {
-    fn new(params: &'a darktoken::Parameters<R>, serial: &'a bls::Scalar) -> Self {
+impl<'a, R: darkcontract::RngInstance> BurnProofBuilder<'a, R> {
+    fn new(params: &'a darkcontract::Parameters<R>, serial: &'a bls::Scalar) -> Self {
         Self {
             params,
             serial,
@@ -337,7 +339,7 @@ impl<'a, R: darktoken::RngInstance> BurnProofBuilder<'a, R> {
         }
     }
 
-    fn commitments(&self) -> Box<dyn darktoken::ProofCommitments + 'a> {
+    fn commitments(&self) -> Box<dyn darkcontract::ProofCommitments + 'a> {
         Box::new(BurnProofCommitments {
             params: self.params,
             commit: self.params.g1 * self.witness,
@@ -351,28 +353,30 @@ impl<'a, R: darktoken::RngInstance> BurnProofBuilder<'a, R> {
     }
 }
 
-impl<'a, R: darktoken::RngInstance> darktoken::ProofCommitments for BurnProofCommitments<'a, R> {
-    fn commit(&self, hasher: &mut darktoken::ProofHasher) {
+impl<'a, R: darkcontract::RngInstance> darkcontract::ProofCommitments
+    for BurnProofCommitments<'a, R>
+{
+    fn commit(&self, hasher: &mut darkcontract::ProofHasher) {
         hasher.add_g1_affine(&self.params.g1);
         hasher.add_g1(&self.commit);
     }
 }
 
 impl BurnProof {
-    fn commitments<'a, R: darktoken::RngInstance>(
+    fn commitments<'a, R: darkcontract::RngInstance>(
         &self,
-        params: &'a darktoken::Parameters<R>,
+        params: &'a darkcontract::Parameters<R>,
         challenge: &bls::Scalar,
         burn_value: &bls::G1Projective,
-    ) -> Box<dyn darktoken::ProofCommitments + 'a> {
+    ) -> Box<dyn darkcontract::ProofCommitments + 'a> {
         Box::new(BurnProofCommitments {
             params,
             commit: burn_value * challenge + params.g1 * self.response,
         })
     }
 }
-struct CommitProofBuilder<'a, R: darktoken::RngInstance> {
-    params: &'a darktoken::Parameters<R>,
+struct CommitProofBuilder<'a, R: darkcontract::RngInstance> {
+    params: &'a darkcontract::Parameters<R>,
 
     // Secrets
     value: &'a bls::Scalar,
@@ -382,8 +386,8 @@ struct CommitProofBuilder<'a, R: darktoken::RngInstance> {
     witness_blind: bls::Scalar,
 }
 
-struct CommitProofCommitments<'a, R: darktoken::RngInstance> {
-    params: &'a darktoken::Parameters<R>,
+struct CommitProofCommitments<'a, R: darkcontract::RngInstance> {
+    params: &'a darkcontract::Parameters<R>,
 
     // Commitments
     commit: bls::G1Projective,
@@ -394,9 +398,9 @@ struct CommitProof {
     response_blind: bls::Scalar,
 }
 
-impl<'a, R: darktoken::RngInstance> CommitProofBuilder<'a, R> {
+impl<'a, R: darkcontract::RngInstance> CommitProofBuilder<'a, R> {
     fn new(
-        params: &'a darktoken::Parameters<R>,
+        params: &'a darkcontract::Parameters<R>,
         value: &'a bls::Scalar,
         blind: &'a bls::Scalar,
     ) -> Self {
@@ -409,7 +413,7 @@ impl<'a, R: darktoken::RngInstance> CommitProofBuilder<'a, R> {
         }
     }
 
-    fn commitments(&self) -> Box<dyn darktoken::ProofCommitments + 'a> {
+    fn commitments(&self) -> Box<dyn darkcontract::ProofCommitments + 'a> {
         assert!(self.params.hs.len() > 0);
         let h1 = self.params.hs[0];
 
@@ -427,8 +431,10 @@ impl<'a, R: darktoken::RngInstance> CommitProofBuilder<'a, R> {
     }
 }
 
-impl<'a, R: darktoken::RngInstance> darktoken::ProofCommitments for CommitProofCommitments<'a, R> {
-    fn commit(&self, hasher: &mut darktoken::ProofHasher) {
+impl<'a, R: darkcontract::RngInstance> darkcontract::ProofCommitments
+    for CommitProofCommitments<'a, R>
+{
+    fn commit(&self, hasher: &mut darkcontract::ProofHasher) {
         hasher.add_g1_affine(&self.params.g1);
         assert!(self.params.hs.len() > 0);
         let h1 = self.params.hs[0];
@@ -438,12 +444,12 @@ impl<'a, R: darktoken::RngInstance> darktoken::ProofCommitments for CommitProofC
 }
 
 impl CommitProof {
-    fn commitments<'a, R: darktoken::RngInstance>(
+    fn commitments<'a, R: darkcontract::RngInstance>(
         &self,
-        params: &'a darktoken::Parameters<R>,
+        params: &'a darkcontract::Parameters<R>,
         challenge: &bls::Scalar,
         token_commit: &bls::G1Projective,
-    ) -> Box<dyn darktoken::ProofCommitments + 'a> {
+    ) -> Box<dyn darkcontract::ProofCommitments + 'a> {
         assert!(params.hs.len() > 0);
         let h1 = params.hs[0];
 
@@ -457,15 +463,15 @@ impl CommitProof {
 }
 
 struct Bank<'a> {
-    coconut: darktoken::Coconut<darktoken::OsRngInstance>,
-    verify_key: &'a darktoken::VerifyKey,
+    coconut: darkcontract::Coconut<darkcontract::OsRngInstance>,
+    verify_key: &'a darkcontract::VerifyKey,
     spent_burns: Vec<bls::G1Projective>,
 }
 
 impl<'a> Bank<'a> {
-    fn new(settings: &CoconutSettings, verify_key: &'a darktoken::VerifyKey) -> Self {
+    fn new(settings: &CoconutSettings, verify_key: &'a darkcontract::VerifyKey) -> Self {
         Self {
-            coconut: darktoken::Coconut::<darktoken::OsRngInstance>::new(
+            coconut: darkcontract::Coconut::<darkcontract::OsRngInstance>::new(
                 settings.attributes,
                 settings.threshold,
                 settings.total,
@@ -627,7 +633,7 @@ fn initialize(config_dir: &Path, coin_name: &str, threshold: u32, total: u32) {
     println!("Created: {}", coin_name);
 }
 
-fn load_settings(config_dir: &Path, coin_name: &str) -> (CoconutSettings, darktoken::VerifyKey) {
+fn load_settings(config_dir: &Path, coin_name: &str) -> (CoconutSettings, darkcontract::VerifyKey) {
     let config_path = config_dir.join("coins").join(coin_name).join("config");
 
     let config_data = fs::read_to_string(config_path).unwrap();
@@ -640,7 +646,7 @@ fn load_settings(config_dir: &Path, coin_name: &str) -> (CoconutSettings, darkto
         total: object.total,
     };
 
-    let verify_key = darktoken::VerifyKey {
+    let verify_key = darkcontract::VerifyKey {
         alpha: bls::G2Projective::from_string(&object.verify_key.0),
         beta: object
             .verify_key
@@ -669,7 +675,7 @@ fn load_authority(
 
     let object: SecretKeyObject = serde_json::from_str(&authority_data).unwrap();
 
-    let secret_key = darktoken::SecretKey {
+    let secret_key = darkcontract::SecretKey {
         x: bls::Scalar::from_string(&object.x),
         y: object
             .y
@@ -727,20 +733,16 @@ fn deposit(config_dir: &Path, coin_name: &str, value: u64) {
     save_token(config_dir, coin_name, &token);
 }
 
-fn load_token<'a>(
-    token_path: &Path,
-    params: &'a darktoken::Parameters<darktoken::OsRngInstance>,
-) -> Token<'a> {
+fn load_token(token_path: &Path) -> Token {
     let token_data = fs::read_to_string(&token_path).unwrap();
     let object: TokenObject = serde_json::from_str(&token_data).unwrap();
 
-    let signature = darktoken::Signature {
+    let signature = darkcontract::Signature {
         commit_hash: bls::G1Projective::from_string(&object.signature.0),
         sigma: bls::G1Projective::from_string(&object.signature.1),
     };
 
-    let private_key = darktoken::ElGamalPrivateKey {
-        params,
+    let private_key = darkcontract::ElGamalPrivateKey {
         private_key: bls::Scalar::from_string(&object.private_key),
     };
 
@@ -762,7 +764,7 @@ fn withdraw(config_dir: &Path, coin_name: &str, token_id: &str) {
         .join(coin_name)
         .join("tokens")
         .join(&token_id);
-    let token = load_token(&token_path, &wallet.coconut.params);
+    let token = load_token(&token_path);
 
     let withdraw_request = wallet.withdraw(token);
     let withdraw_success = bank.process_withdraw(withdraw_request);
@@ -793,7 +795,7 @@ fn split(config_dir: &Path, coin_name: &str, token_id: &str, value1: u64, value2
         .join(coin_name)
         .join("tokens")
         .join(&token_id);
-    let token = load_token(&token_path, &wallet.coconut.params);
+    let token = load_token(&token_path);
 
     if token.value != value1 + value2 {
         eprintln!("error: split amounts do not equal token value.");
@@ -821,7 +823,7 @@ fn token_info(config_dir: &Path, coin_name: &str, token_id: &str) {
         .join(coin_name)
         .join("tokens")
         .join(&token_id);
-    let token = load_token(&token_path, &wallet.coconut.params);
+    let token = load_token(&token_path);
 
     println!("Token value: {}", token.value);
 }
@@ -830,16 +832,13 @@ fn list_tokens(config_dir: &Path, coin_name: &str) {
     let (settings, verify_key) = load_settings(config_dir, coin_name);
     let wallet = Wallet::new(&settings, &verify_key);
 
-    let tokens_path = config_dir
-        .join("coins")
-        .join(coin_name)
-        .join("tokens");
+    let tokens_path = config_dir.join("coins").join(coin_name).join("tokens");
 
     let paths = fs::read_dir(tokens_path).unwrap();
     for path in paths {
         let token_path = path.unwrap().path();
         println!("{}", token_path.file_name().unwrap().to_str().unwrap());
-        let token = load_token(&token_path, &wallet.coconut.params);
+        let token = load_token(&token_path);
         println!("  Token value: {}", token.value);
     }
 
@@ -887,7 +886,7 @@ fn main() {
     )
     .get_matches();
 
-    let default_dir = dirs::home_dir().unwrap().as_path().join(".darktoken/");
+    let default_dir = dirs::home_dir().unwrap().as_path().join(".darkcontract/");
 
     let config_dir = match matches.value_of("CONFIG") {
         None => default_dir.as_path(),
