@@ -104,13 +104,12 @@ fn test_multiparty_coconut() {
     let public_attributes2 = vec![bls::Scalar::from(256)];
 
     let credential =
-        coconut.make_credential(&verify_key, &signature, &private_attributes2, Vec::new());
+        coconut.make_credential(&verify_key, &signature, &private_attributes2);
 
     let is_verify = credential.verify(
         &coconut.params,
         &verify_key,
         &public_attributes2,
-        Vec::new(),
     );
     assert!(is_verify);
 }

@@ -3,7 +3,9 @@ extern crate clap;
 extern crate darkcontract;
 use bls12_381 as bls;
 use clap::{App, Arg, SubCommand};
+use log::{debug, info, warn, error};
 use serde::{Deserialize, Serialize};
+use simplelog::*;
 use sha2::Digest;
 use std::fs;
 use std::path::Path;
@@ -91,7 +93,7 @@ struct Wallet<'a> {
 
 struct WithdrawRequest {
     burn_value: bls::G1Projective,
-    burn_proof: BurnProof,
+    //burn_proof: BurnProof,
     credential: darkcontract::Credential,
 }
 
@@ -194,21 +196,19 @@ impl<'a> Wallet<'a> {
             self.verify_key,
             &token.signature,
             &private_attributes,
-            vec![commitments],
         );
 
         assert!(credential.verify(
             &self.coconut.params,
             &self.verify_key,
             &Vec::new(),
-            vec![proof_builder.commitments()],
         ));
 
-        let burn_proof = proof_builder.finish(&credential.challenge);
+        //let burn_proof = proof_builder.finish(&credential.challenge);
 
         WithdrawRequest {
             burn_value,
-            burn_proof,
+            //burn_proof,
             credential,
         }
     }
@@ -275,10 +275,10 @@ impl<'a> Wallet<'a> {
             &token.signature,
             &private_attributes,
             //vec![commitments, commit_commitments, commit1_commitments, commit2_commitments],
-            vec![commitments],
+            //vec![commitments],
         );
 
-        let burn_proof = proof_builder.finish(&credential.challenge);
+        //let burn_proof = proof_builder.finish(&credential.challenge);
         //let commit_proof = commit_proof_builder.finish(&credential.challenge);
         //let commit1_proof = commit1_proof_builder.finish(&credential.challenge);
         //let commit2_proof = commit2_proof_builder.finish(&credential.challenge);
@@ -294,13 +294,13 @@ impl<'a> Wallet<'a> {
             return Err("commits don't add up");
         }
         // pretty similar to process_withdraw()
-        let burn_commitments =
-            burn_proof.commitments(&self.coconut.params, &credential.challenge, &burn_value);
+        //let burn_commitments =
+        //    burn_proof.commitments(&self.coconut.params, &credential.challenge, &burn_value);
         if !credential.verify(
             &self.coconut.params,
             &self.verify_key,
             &Vec::new(),
-            vec![burn_commitments],
+            //vec![burn_commitments],
         ) {
             return Err("verify failed");
         }
@@ -488,17 +488,19 @@ impl<'a> Bank<'a> {
         // To avoid double spends of the same coin
         self.spent_burns.push(withdraw.burn_value);
 
+        /*
         let burn_commits = withdraw.burn_proof.commitments(
             &self.coconut.params,
             &withdraw.credential.challenge,
             &withdraw.burn_value,
         );
+        */
 
         withdraw.credential.verify(
             &self.coconut.params,
             &self.verify_key,
             &Vec::new(),
-            vec![burn_commits],
+            //vec![burn_commits],
         )
     }
 }
@@ -899,6 +901,15 @@ fn main() {
         println!("Initialized new config directory: {}", config_dir.display());
     }
 
+    let log_path = config_dir.join("darkcontract.log");
+
+    CombinedLogger::init(
+        vec![
+            TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed).unwrap(),
+            //WriteLogger::new(LevelFilter::Info, Config::default(), std::fs::File::create(log_path).unwrap()),
+        ]
+    ).unwrap();
+
     match matches.subcommand() {
         ("init", Some(matches)) => {
             let coin_name = matches.value_of("NAME").unwrap();
@@ -976,12 +987,12 @@ fn main() {
 
     let withdraw_success = bank.process_withdraw(withdraw_request);
     assert_eq!(withdraw_success, true);
-    println!("Successfully withdrew our token of {} $", coin_value);
+    info!("Successfully withdrew our token of {} $", coin_value);
 
     // Lets now make a new coin and split it
     let token = wallet.deposit(coin_value, &authorities);
     match wallet.split(token, 100, 10, &authorities) {
         Err(err) => eprintln!("error: split failed: {}", err),
-        Ok((token1, token2)) => println!("split worked."),
+        Ok((token1, token2)) => info!("split worked."),
     }
 }

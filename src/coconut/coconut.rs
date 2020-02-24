@@ -217,7 +217,6 @@ impl<R: RngInstance> Coconut<R> {
         verify_key: &VerifyKey,
         signature: &Signature,
         attributes: &Vec<Attribute>,
-        external_commitments: Vec<Box<dyn ProofCommitments + 'b>>,
     ) -> Credential {
         assert!(attributes.len() <= verify_key.beta.len());
 
@@ -237,6 +236,7 @@ impl<R: RngInstance> Coconut<R> {
         // v = r H_p(C_m)
         let v = blind_commit_hash * blind;
 
+        /*
         // Construct proof
         // Witness
         let proof_builder = CredentialProofBuilder::new(&self.params, attributes, &blind);
@@ -253,14 +253,13 @@ impl<R: RngInstance> Coconut<R> {
         let challenge = proof_assembly.compute_challenge();
         //Responses
         let proof = proof_builder.finish(&challenge);
+        */
 
         Credential {
             kappa: kappa,
             v: v,
             blind_commit_hash,
             blind_sigma,
-            challenge,
-            proof,
         }
     }
 }
@@ -346,8 +345,6 @@ pub struct Credential {
     v: bls::G1Projective,
     blind_commit_hash: bls::G1Projective,
     blind_sigma: bls::G1Projective,
-    pub challenge: bls::Scalar,
-    proof: CredentialProof,
 }
 
 impl Credential {
@@ -356,9 +353,8 @@ impl Credential {
         params: &Parameters<R>,
         verify_key: &VerifyKey,
         public_attributes: &Vec<Attribute>,
-        external_commitments: Vec<Box<dyn ProofCommitments + 'a>>,
     ) -> bool {
-        let commitments = self.proof.commitments(
+        /*let commitments = self.proof.commitments(
             params,
             &self.challenge,
             verify_key,
@@ -378,7 +374,7 @@ impl Credential {
 
         if challenge != self.challenge {
             return false;
-        }
+        }*/
 
         let mut public_aggregates = bls::G2Projective::identity();
         let start_index = verify_key.beta.len() - public_attributes.len();
