@@ -73,26 +73,3 @@ pub trait ProofCommitments {
     fn commit(&self, hasher: &mut ProofHasher);
 }
 
-pub struct ProofAssembly<'a> {
-    commits: Vec<Box<dyn ProofCommitments + 'a>>,
-}
-
-impl<'a> ProofAssembly<'a> {
-    pub fn new() -> Self {
-        Self {
-            commits: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, commit: Box<dyn ProofCommitments + 'a>) {
-        self.commits.push(commit);
-    }
-
-    pub fn compute_challenge(&self) -> bls::Scalar {
-        let mut hasher = ProofHasher::new();
-        for commit in &self.commits {
-            commit.commit(&mut hasher);
-        }
-        hasher.finish()
-    }
-}
