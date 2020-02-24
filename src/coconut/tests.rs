@@ -62,7 +62,6 @@ fn test_multiparty_coconut() {
         &gamma,
         &private_attributes,
         &public_attributes,
-        Vec::new(),
     );
 
     let blind_signatures: Vec<_> = secret_keys
@@ -74,7 +73,6 @@ fn test_multiparty_coconut() {
                     secret_key,
                     &gamma,
                     &public_attributes,
-                    Vec::new(),
                 )
                 .unwrap()
         })

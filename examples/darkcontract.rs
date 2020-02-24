@@ -41,7 +41,6 @@ impl Authority {
         sign_request: &darkcontract::BlindSignatureRequest,
         public_key: &darkcontract::ElGamalPublicKey,
         public_attributes: &Vec<bls::Scalar>,
-        external_commitments: Vec<Box<dyn darkcontract::ProofCommitments>>,
     ) -> darkcontract::PartialSignature {
         sign_request
             .blind_sign(
@@ -49,7 +48,6 @@ impl Authority {
                 &self.secret_key,
                 &public_key,
                 &public_attributes,
-                external_commitments,
             )
             .unwrap()
     }
@@ -121,7 +119,6 @@ impl<'a> Wallet<'a> {
             &public_key,
             &private_attributes,
             &public_attributes,
-            Vec::new(),
         );
 
         // Issue a new token
@@ -148,7 +145,6 @@ impl<'a> Wallet<'a> {
             &public_key,
             &private_attributes,
             &public_attributes,
-            Vec::new(),
         );
 
         let mut indexed_shares: Vec<_> = authorities
@@ -157,7 +153,7 @@ impl<'a> Wallet<'a> {
                 (
                     authority.index,
                     authority
-                        .blind_sign(&sign_request, &public_key, &public_attributes, Vec::new())
+                        .blind_sign(&sign_request, &public_key, &public_attributes)
                         .unblind(&private_key),
                 )
             })
@@ -780,7 +776,7 @@ fn withdraw(config_dir: &Path, coin_name: &str, token_id: &str) {
 
     if withdraw_success {
         println!("Token burnt.");
-        fs::remove_file(&token_path);
+        fs::remove_file(&token_path).unwrap();
     }
 }
 
@@ -808,7 +804,7 @@ fn split(config_dir: &Path, coin_name: &str, token_id: &str, value1: u64, value2
     match wallet.split(token, value1, value2, &authorities) {
         Err(err) => eprintln!("error: split failed: {}", err),
         Ok((token1, token2)) => {
-            fs::remove_file(&token_path);
+            fs::remove_file(&token_path).unwrap();
             println!("Burnt token {}", token_id);
             save_token(config_dir, coin_name, &token1);
             save_token(config_dir, coin_name, &token2);

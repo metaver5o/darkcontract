@@ -137,7 +137,6 @@ impl<R: RngInstance> Coconut<R> {
         shared_attribute_key: &'a ElGamalPublicKey,
         private_attributes: &'a Vec<Attribute>,
         public_attributes: &'a Vec<Attribute>,
-        external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> BlindSignatureRequest {
         let blinding_factor = self.params.random_scalar();
 
@@ -166,6 +165,7 @@ impl<R: RngInstance> Coconut<R> {
             })
             .collect();
 
+        /*
         // Construct proof
         // Witness
         let proof_builder = SignatureProofBuilder::new(
@@ -189,12 +189,13 @@ impl<R: RngInstance> Coconut<R> {
         let challenge = proof_assembly.compute_challenge();
         //Responses
         let proof = proof_builder.finish(&challenge);
+        */
 
         BlindSignatureRequest {
             attribute_commit,
             encrypted_attributes,
-            challenge,
-            proof,
+            //challenge,
+            //proof,
         }
     }
 
@@ -267,8 +268,8 @@ impl<R: RngInstance> Coconut<R> {
 pub struct BlindSignatureRequest {
     attribute_commit: bls::G1Projective,
     encrypted_attributes: Vec<EncryptedValue>,
-    challenge: bls::Scalar,
-    proof: SignatureProof,
+    //challenge: bls::Scalar,
+    //proof: SignatureProof,
 }
 
 impl BlindSignatureRequest {
@@ -282,7 +283,6 @@ impl BlindSignatureRequest {
         secret_key: &SecretKey,
         shared_attribute_key: &ElGamalPublicKey,
         public_attributes: &Vec<Attribute>,
-        external_commitments: Vec<Box<dyn ProofCommitments>>,
     ) -> Result<PartialSignature, &'static str> {
         assert_eq!(
             self.encrypted_attributes.len() + public_attributes.len(),
@@ -297,6 +297,7 @@ impl BlindSignatureRequest {
         // Issue signature
         let commit_hash = self.compute_commit_hash();
 
+        /*
         // Verify proof
         let commitments = self.proof.commitments(
             params,
@@ -318,6 +319,7 @@ impl BlindSignatureRequest {
         if challenge != self.challenge {
             return Err("verify proof failed");
         }
+        */
 
         let mut signature_a = bls::G1Projective::identity();
         for (y_j, a) in izip!(&secret_key.y, a_factors) {
